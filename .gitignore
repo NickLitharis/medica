@@ -1,0 +1,22 @@
+# Ignore dataset folder
+/dataset/
+
+# Ignore model files
+*.h5
+
+# Ignore .zip files
+*.zip
+
+
+# Ignore original thesis notebook
+thesis.ipynb
+
+# Ignore Python cache and notebook checkpoints
+__pycache__/
+.ipynb_checkpoints/
+
+# Ignore environment files
+.env
+ 
+# Ignore saved model artifacts
+models/

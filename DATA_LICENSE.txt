@@ -1,0 +1,7 @@
+Dataset license and usage notes
+
+- Dataset files under `dataset/` are provided for research and educational purposes only.
+- Some dataset contents may include third-party material (images, captions). Unless explicitly stated, you must not redistribute the dataset for commercial use.
+- If you plan to publish results using this dataset, please cite the thesis and respect any original sources for included items.
+
+If you hold the rights to all items in the dataset and wish to relicense them, replace this file with a permissive license (e.g., CC0 or CC BY).
