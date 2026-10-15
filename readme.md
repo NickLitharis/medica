@@ -32,6 +32,43 @@ convolutional layer appears in the model file: the CNN is the feature-extraction
 produces those features, and the model itself is the attention-augmented bidirectional LSTM
 decoder over them.
 
+## Running the pipeline
+
+The notebooks above are the original record. The maintained pipeline is four modules:
+
+| File | Purpose |
+| --- | --- |
+| `data.py` | loads the `.pkl` artefacts, rebuilds the vocabulary, splits train/val/test, builds `tf.data` batches |
+| `model.py` | the attention decoder (layer stack above) |
+| `train.py` | trains it, with a validation split, checkpointing and early stopping |
+| `evaluate.py` | generates captions and reports BLEU-1 to BLEU-4 |
+
+```bash
+uv sync
+uv run python train.py --dataset-dir /kaggle/input/dataset --epochs 30 --out /kaggle/working
+uv run python evaluate.py --dataset-dir /kaggle/input/dataset --run /kaggle/working
+uv run pytest
+```
+
+Five differences from the notebook pipeline, each one a real defect rather than a style
+preference:
+
+* **a validation split.** The original cut the ids 70/30 by position and trained with no
+  held-out set at all, so there was nothing to choose a checkpoint or an early-stopping
+  epoch against.
+* **examples built once.** The original re-tokenised and re-padded every caption on every
+  epoch.
+* **integer labels with sparse cross-entropy.** The original materialised a one-hot vector
+  per example.
+* **the vocabulary is rebuilt, not unpickled.** The dataset's `tokenizer.pkl` holds a Keras 2
+  `Tokenizer`, a class Keras 3 no longer ships, so relying on it would pin the pipeline to
+  the version it is being moved off.
+* **BLEU-1 to BLEU-4 reported separately.** The original printed one BLEU figure, which is
+  not comparable with the n-gram breakdown in the thesis.
+
+Requires `tensorflow>=2.16` (Keras 3). The notebooks pin 2.15, which is no longer installable:
+Kaggle's oldest available version is 2.20, and no installable Windows wheel exists for it.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
