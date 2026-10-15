@@ -50,13 +50,18 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
     ``features`` is ``(n_images, feature_dim)``. Returns a list of ``n_images`` captions.
     One model call per token position, over the whole batch, rather than one per token per
     image.
+
+    Prefixes are **right**-padded: real tokens first, padding after. Padding on the left
+    makes the embedding mask go false-then-true, which cuDNN's LSTM rejects outright - and
+    cuDNN is what runs on a GPU. For a per-position model the distribution is then read at
+    each caption's last real token rather than at the final column, which is padding.
     """
     import numpy as np
 
     count = len(features)
-    # prefixes are left-padded, so the tokens sit at the end and padding at the front
     prefixes = np.full((count, max_length), PAD_INDEX, dtype="int32")
-    prefixes[:, -1] = word_to_index[START]
+    prefixes[:, 0] = word_to_index[START]
+    lengths = np.ones(count, dtype="int32")
 
     finished = np.zeros(count, dtype=bool)
     tokens = [[] for _ in range(count)]
@@ -64,8 +69,8 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
     for _ in range(max_length):
         predictions = model.predict([features, prefixes], verbose=0, batch_size=batch_size)
         if predictions.ndim == 3:
-            # a per-position model (seq2seq) speaks at every step; the last step is the next token
-            predictions = predictions[:, -1, :]
+            # a per-position model speaks at every step; read the last real one, not the padding
+            predictions = predictions[np.arange(count), lengths - 1]
         next_indices = np.argmax(predictions, axis=1).astype("int32")
 
         for i in range(count):
@@ -73,13 +78,13 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
                 continue
             if index_to_word.get(int(next_indices[i])) == END:
                 finished[i] = True
-            else:
-                tokens[i].append(int(next_indices[i]))
+                continue
+            tokens[i].append(int(next_indices[i]))
+            if lengths[i] < max_length:
+                prefixes[i, lengths[i]] = next_indices[i]
+                lengths[i] += 1
         if finished.all():
             break
-
-        # shift left and append, keeping the last max_length tokens
-        prefixes = np.concatenate([prefixes[:, 1:], next_indices.reshape(-1, 1)], axis=1)
 
     return [decode([word_to_index[START], *row], index_to_word) for row in tokens]
 
