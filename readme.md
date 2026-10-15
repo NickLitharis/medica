@@ -24,7 +24,7 @@ The hybrid CNN-RNN model with integrated attention — named *OLIVER* in the the
 
 - `model_training_preprocessing.ipynb`: Notebook for model training and data preprocessing.
 - `model_usage.ipynb`: Notebook for model inference, evaluation, and visualization.
-- `requirements.txt`: List of required Python packages.
+- `pyproject.toml` / `uv.lock`: Declared dependencies and the locked resolution.
 - `LICENSE` / `LICENSE-THESIS.txt` / `DATA_LICENSE.txt`: Licensing for the code, the thesis document, and the dataset respectively.
 
 The preprocessed dataset is **not committed** (see `DATA_LICENSE.txt`). To reproduce the pipeline, supply your own `dataset/` folder containing:
@@ -54,7 +54,7 @@ The preprocessed dataset is **not committed** (see `DATA_LICENSE.txt`). To repro
 
 1. Install dependencies:
 	```
-	pip install -r requirements.txt
+	uv sync
 	```
 2. Run `model_training_preprocessing.ipynb` to train and save the model.
 3. Run `model_usage.ipynb` to generate captions, evaluate, and visualize results.
@@ -62,7 +62,15 @@ The preprocessed dataset is **not committed** (see `DATA_LICENSE.txt`). To repro
 
 ## Requirements
 
-See `requirements.txt` for all required packages.
+Dependencies are declared in `pyproject.toml` and pinned in `uv.lock`.
+
+TensorFlow is pinned to 2.15, the last release on the Keras 2 API that these notebooks
+are written against — 2.16 ships Keras 3 and the model code does not run on it. That
+pin also caps Python at 3.11, which `requires-python` states explicitly; uv fetches a
+suitable interpreter for you, so `uv sync` works on a machine whose default Python is
+newer. On Windows the resolver also swaps in a `tensorflow-io-gcs-filesystem` build
+that has a `win_amd64` wheel, which is what makes the install work here as well as on
+Linux (Kaggle / Colab).
 
 ## Notes
 

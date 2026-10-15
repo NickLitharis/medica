@@ -1,9 +1,0 @@
-tensorflow==2.15.0
-numpy
-tqdm
-pickle-mixin
-nltk
-rouge
-pycocoevalcap
-matplotlib
-Pillow

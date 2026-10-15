@@ -1,0 +1,30 @@
+[project]
+name = "medica"
+version = "0.1.0"
+description = "Medical image captioning with a CNN and attention RNN in TensorFlow - BSc thesis on ImageCLEF 2017 (BLEU-1 0.309)"
+readme = "readme.md"
+# TensorFlow 2.15 is the last release on the Keras 2 API, which these notebooks are
+# written against: 2.16+ ships Keras 3 and the model code does not run on it.
+# TensorFlow 2.15 supports Python 3.9-3.11, so the range is capped below 3.12.
+requires-python = ">=3.9,<3.12"
+license = "MIT"
+dependencies = [
+    "tensorflow==2.15.0",
+    "numpy",
+    "tqdm",
+    "pickle-mixin",
+    "nltk",
+    "rouge",
+    "pycocoevalcap",
+    "matplotlib",
+    "Pillow",
+]
+
+# Notebook collection, not a distributable package.
+[tool.uv]
+package = false
+# TensorFlow 2.15's dependency range permits tensorflow-io-gcs-filesystem versions
+# that only ship Linux/macOS wheels. Declaring Windows as a required environment
+# makes the resolver pick a version that has a win_amd64 wheel, so `uv sync` works
+# here as well as on Linux (Kaggle/Colab).
+required-environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
