@@ -23,3 +23,6 @@ models/
 
 # uv
 .venv/
+
+# uv
+.venv/

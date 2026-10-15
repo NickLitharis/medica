@@ -28,3 +28,11 @@ package = false
 # makes the resolver pick a version that has a win_amd64 wheel, so `uv sync` works
 # here as well as on Linux (Kaggle/Colab).
 required-environments = ["sys_platform == 'win32' and platform_machine == 'AMD64'"]
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+# Bare `pytest` does not put the repository root on sys.path, so `import model` fails.
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
