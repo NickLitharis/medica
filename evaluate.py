@@ -40,7 +40,7 @@ def parse_args(argv=None):
     parser.add_argument("--run", default="/kaggle/working", help="dir with model_best.keras + encoding.json")
     parser.add_argument("--model", default="", help="override the model path")
     parser.add_argument("--limit", type=int, default=0, help="score only the first N test images")
-    parser.add_argument("--batch-size", type=int, default=64, help="images generated at once")
+    parser.add_argument("--batch-size", type=int, default=256, help="images generated at once")
     return parser.parse_args(argv)
 
 
@@ -48,8 +48,12 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
     """Greedy-decode captions for a matrix of image features.
 
     ``features`` is ``(n_images, feature_dim)``. Returns a list of ``n_images`` captions.
-    One model call per token position, over the whole batch, rather than one per token per
-    image.
+
+    Images are decoded in chunks of ``batch_size``, and within a chunk one model call covers
+    a whole token position for the whole chunk. Both are deliberate: asking the model for the
+    full test split at once means materialising ``(n_images, max_length, vocab_size)``, which
+    on the real split is 9857 x 22 x 9025 - 7.8 GB as float32, and that is an out-of-memory
+    error rather than a slow run.
 
     Prefixes are **right**-padded: real tokens first, padding after. Padding on the left
     makes the embedding mask go false-then-true, which cuDNN's LSTM rejects outright - and
@@ -58,33 +62,39 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
     """
     import numpy as np
 
-    count = len(features)
-    prefixes = np.full((count, max_length), PAD_INDEX, dtype="int32")
-    prefixes[:, 0] = word_to_index[START]
-    lengths = np.ones(count, dtype="int32")
+    total = len(features)
+    tokens = [[] for _ in range(total)]
 
-    finished = np.zeros(count, dtype=bool)
-    tokens = [[] for _ in range(count)]
+    for start in range(0, total, batch_size):
+        stop = min(start + batch_size, total)
+        chunk_features = features[start:stop]
+        size = stop - start
 
-    for _ in range(max_length):
-        predictions = model.predict([features, prefixes], verbose=0, batch_size=batch_size)
-        if predictions.ndim == 3:
-            # a per-position model speaks at every step; read the last real one, not the padding
-            predictions = predictions[np.arange(count), lengths - 1]
-        next_indices = np.argmax(predictions, axis=1).astype("int32")
+        prefixes = np.full((size, max_length), PAD_INDEX, dtype="int32")
+        prefixes[:, 0] = word_to_index[START]
+        lengths = np.ones(size, dtype="int32")
+        finished = np.zeros(size, dtype=bool)
 
-        for i in range(count):
-            if finished[i]:
-                continue
-            if index_to_word.get(int(next_indices[i])) == END:
-                finished[i] = True
-                continue
-            tokens[i].append(int(next_indices[i]))
-            if lengths[i] < max_length:
-                prefixes[i, lengths[i]] = next_indices[i]
-                lengths[i] += 1
-        if finished.all():
-            break
+        for _ in range(max_length):
+            predictions = model.predict([chunk_features, prefixes], verbose=0,
+                                        batch_size=batch_size)
+            if predictions.ndim == 3:
+                # per-position model: read each caption's last real token, not the padding
+                predictions = predictions[np.arange(size), lengths - 1]
+            next_indices = np.argmax(predictions, axis=1).astype("int32")
+
+            for i in range(size):
+                if finished[i]:
+                    continue
+                if index_to_word.get(int(next_indices[i])) == END:
+                    finished[i] = True
+                    continue
+                tokens[start + i].append(int(next_indices[i]))
+                if lengths[i] < max_length:
+                    prefixes[i, lengths[i]] = next_indices[i]
+                    lengths[i] += 1
+            if finished.all():
+                break
 
     return [decode([word_to_index[START], *row], index_to_word) for row in tokens]
 

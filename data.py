@@ -34,11 +34,24 @@ ARTIFACT_FILES = {
 }
 
 
+def usable_mapping(
+    mapping: Mapping[str, Sequence[str]], features: Mapping[str, object]
+) -> dict[str, list[str]]:
+    """Captions whose image actually has a feature row.
+
+    A caption in the full dataset names an image that ``image_features.pkl`` has no entry
+    for - feature extraction dropped it. Taking the first N image ids hides this, because
+    the missing one sorts late; running on everything hits it immediately.
+    """
+    return {image_id: list(captions) for image_id, captions in mapping.items() if image_id in features}
+
+
 def load_artifacts(dataset_dir: str | Path) -> tuple[dict, dict, int]:
     """Load ``image_features.pkl``, ``captions.pkl`` and ``max_length.pkl``.
 
     ``features`` maps image id -> array of feature vectors; the pipeline uses the first,
-    which is what the original notebooks did (``features[key][0]``).
+    which is what the original notebooks did (``features[key][0]``). Captions with no
+    matching feature row are dropped, with a count, rather than blowing up mid-epoch.
     """
     root = Path(dataset_dir)
     loaded = {}
@@ -48,7 +61,14 @@ def load_artifacts(dataset_dir: str | Path) -> tuple[dict, dict, int]:
             raise FileNotFoundError(f"missing dataset artefact: {path}")
         with path.open("rb") as handle:
             loaded[key] = pickle.load(handle)
-    return loaded["features"], loaded["captions"], int(loaded["max_length"])
+    features = loaded["features"]
+    mapping = loaded["captions"]
+
+    usable = usable_mapping(mapping, features)
+    dropped = len(mapping) - len(usable)
+    if dropped:
+        print(f"  dropped {dropped} captions whose image has no feature row", flush=True)
+    return features, usable, int(loaded["max_length"])
 
 
 def wrap_captions(mapping: Mapping[str, Sequence[str]]) -> dict[str, list[str]]:

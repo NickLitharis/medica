@@ -21,6 +21,7 @@ from data import (
     feature_matrix,
     split_ids,
     training_pairs,
+    usable_mapping,
     wrap_captions,
 )
 
@@ -187,6 +188,24 @@ def test_padded_batches_group_similar_lengths_together():
     widths = [batch_inputs.shape[1] for _, batch_inputs, _ in batches]
     # short captions must not be padded out to the longest caption in the dataset
     assert min(widths) < max(widths)
+
+
+def test_usable_mapping_drops_captions_without_a_feature_row():
+    from data import usable_mapping
+
+    mapping = {"a": ["one two"], "b": ["three four"], "c": ["five six"]}
+    features = {"a": [0], "c": [0]}  # b has no extracted feature
+    usable = usable_mapping(mapping, features)
+    assert set(usable) == {"a", "c"}
+    assert usable["a"] == ["one two"], "captions are kept as they were"
+
+
+def test_usable_mapping_keeps_everything_when_nothing_is_missing():
+    from data import usable_mapping
+
+    mapping = {"a": ["one two"], "b": ["three four"]}
+    features = {"a": [0], "b": [0]}
+    assert usable_mapping(mapping, features) == mapping
 
 
 def test_feature_matrix_has_one_row_per_image_not_per_example():
