@@ -15,6 +15,33 @@ Trained and evaluated on the **ImageCLEF 2017 Medical Image Captioning** benchma
 
 The hybrid CNN-RNN model with integrated attention — named *OLIVER* in the thesis — scored highest on both metrics. Scores are reported in Appendix D of the thesis; `model_usage.ipynb` regenerates the evaluation.
 
+### Modernised pipeline
+
+`train.py` + `evaluate.py` train and score a model from scratch over the whole dataset. A full
+run — 49,286 images, 30 epochs, ~21s per epoch on one T4, then 9,857 test images scored in
+5.5 minutes — gives:
+
+| | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 |
+| --- | --- | --- | --- | --- |
+| this pipeline (teacher-forced seq2seq) | 0.1330 | 0.0692 | 0.0350 | 0.0183 |
+
+**This is not comparable with the table above, and it is lower.** The modernised path trains a
+different model (one pass per caption, unidirectional decoder, image conditioning by
+cross-attention), on a different split (seeded 70/10/20 rather than the original positional
+70/30), and scores with `nltk.corpus_bleu`. Whether 0.309 reproduces under this evaluation
+has not been tested; that needs the original `model_epoch_50.h5` scored on this same split
+with this same BLEU code, which also needs the dataset's Keras 2 `tokenizer.pkl` shimmed.
+
+Two facts from the run log, so the gap is not blamed on training length:
+
+* validation loss flattened at 4.28–4.29 across the final six epochs with the learning rate
+already decayed to 4e-5, so more epochs will not close it;
+* captions contain `<unk>` where rare clinical terms were dropped by `min_count=3` (vocabulary
+9025 words), which caps the score directly.
+
+Sample output: `chest ctscan showing bilateral ground glass opacities`,
+`ultrasound of the abdomen showing the <unk> of the right kidney`.
+
 ## Model architecture
 
 The decoder is attention-based rather than a plain RNN. Read out of the trained model file
