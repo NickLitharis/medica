@@ -63,6 +63,9 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
 
     for _ in range(max_length):
         predictions = model.predict([features, prefixes], verbose=0, batch_size=batch_size)
+        if predictions.ndim == 3:
+            # a per-position model (seq2seq) speaks at every step; the last step is the next token
+            predictions = predictions[:, -1, :]
         next_indices = np.argmax(predictions, axis=1).astype("int32")
 
         for i in range(count):

@@ -15,6 +15,7 @@ from data import (
     START,
     UNK,
     build_vocabulary,
+    caption_examples,
     decode,
     encode,
     feature_matrix,
@@ -116,6 +117,76 @@ def test_training_pairs_reference_the_right_image_row():
     assert set(rows) == {0, 1}
     # identical captions, so each image contributes the same number of examples
     assert rows.count(0) == rows.count(1) > 0
+
+
+def test_caption_examples_make_one_example_per_caption():
+    mapping = wrap_captions({"a": ["one two three", "four five"]})
+    word_to_index, _ = build_vocabulary(mapping["a"])
+    rows, inputs, targets = caption_examples(["a"], mapping, word_to_index, max_length=10)
+
+    # the per-position pairing gives 3 examples here, one per position
+    assert len(inputs) == 2, "one example per caption, not one per position"
+    assert rows == [0, 0]
+    assert len(targets[0]) == len(inputs[0])
+
+
+def test_caption_examples_shift_the_target_by_one():
+    mapping = wrap_captions({"a": ["one two"]})
+    word_to_index, _ = build_vocabulary(["one two"])
+    _, inputs, targets = caption_examples(["a"], mapping, word_to_index, max_length=10)
+
+    sequence = encode(mapping["a"][0], word_to_index)
+    assert inputs[0] == sequence[:-1]
+    assert targets[0] == sequence[1:]
+    assert targets[0][-1] == word_to_index[END]
+
+
+def test_caption_examples_respect_max_length():
+    mapping = wrap_captions({"a": ["one two three four five"]})
+    word_to_index, _ = build_vocabulary(["one two three four five"])
+    _, inputs, targets = caption_examples(["a"], mapping, word_to_index, max_length=2)
+    assert len(inputs[0]) == 2 and len(targets[0]) == 2
+
+
+def test_caption_examples_reference_the_right_image_row():
+    mapping = wrap_captions({"a": ["one two"], "b": ["one two"]})
+    word_to_index, _ = build_vocabulary(["one two"])
+    rows, inputs, _ = caption_examples(["a", "b"], mapping, word_to_index, max_length=8)
+    assert rows == [0, 1]
+    assert len(inputs) == 2
+
+
+def test_padded_batches_preserve_every_example_and_pad_to_a_multiple_of_eight():
+    from data import _padded_batches
+
+    rows = list(range(5))
+    inputs = [[1], [1, 2], [1, 2, 3], [1, 2, 3, 4], [1, 2, 3, 4, 5]]
+    targets = [[len(item)] * len(item) for item in inputs]
+    batches = _padded_batches(rows, inputs, targets, batch_size=2)
+
+    seen = []
+    for batch_rows, batch_inputs, batch_targets in batches:
+        assert batch_inputs.shape == batch_targets.shape
+        # a rounded width is what keeps the model from rebuilding its graph per batch
+        assert batch_inputs.shape[1] % 8 == 0
+        seen.extend(batch_rows.tolist())
+        for position, row in enumerate(batch_inputs):
+            real = [token for token in row if token != PAD_INDEX]
+            assert real == inputs[batch_rows[position]], "real tokens first, padding after"
+    assert sorted(seen) == rows, "every caption appears exactly once"
+
+
+def test_padded_batches_group_similar_lengths_together():
+    from data import _padded_batches
+
+    rows = list(range(6))
+    inputs = [[1], [2], [1, 2, 3, 4, 5, 6, 7], [1, 2, 3, 4, 5, 6, 7, 8, 9], [1, 2], [1, 2, 3]]
+    targets = [[1] * len(item) for item in inputs]
+    batches = _padded_batches(rows, inputs, targets, batch_size=2)
+
+    widths = [batch_inputs.shape[1] for _, batch_inputs, _ in batches]
+    # short captions must not be padded out to the longest caption in the dataset
+    assert min(widths) < max(widths)
 
 
 def test_feature_matrix_has_one_row_per_image_not_per_example():

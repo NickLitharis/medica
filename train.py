@@ -21,8 +21,15 @@ import json
 import time
 from pathlib import Path
 
-from data import build_vocabulary, load_artifacts, make_dataset, split_ids, wrap_captions
-from model import build_captioning_model
+from data import (
+    build_vocabulary,
+    load_artifacts,
+    make_caption_dataset,
+    make_dataset,
+    split_ids,
+    wrap_captions,
+)
+from model import build_captioning_model, build_seq2seq_model
 
 
 def parse_args(argv=None):
@@ -46,6 +53,9 @@ def parse_args(argv=None):
                         help="batches per graph execution; raises throughput on GPU")
     parser.add_argument("--jit", action="store_true",
                         help="compile with XLA; faster where it applies, not always compatible")
+    parser.add_argument("--arch", choices=["seq2seq", "legacy"], default="seq2seq",
+                        help="seq2seq = one pass per caption (default, much less work); "
+                             "legacy = one pass per position, matching the trained artifact")
     parser.add_argument("--num-parallel-calls", type=int, default=0,
                         help="0 = let tf.data decide (AUTOTUNE)")
     return parser.parse_args(argv)
@@ -93,25 +103,34 @@ def main(argv=None) -> int:
     vocab_size = len(word_to_index) + 1  # + the padding slot
 
     splits = split_ids(list(mapping), val_size=args.val_size, test_size=args.test_size)
-    print(f"images: {len(mapping)}  vocab: {vocab_size}  max_length: {max_length}")
+    print(f"images: {len(mapping)}  vocab: {vocab_size}  max_length: {max_length}  arch: {args.arch}")
     print(f"train: {len(splits['train'])}  val: {len(splits['val'])}  test: {len(splits['test'])}")
 
     def dataset_for(ids, shuffle):
         subset = {key: mapping[key] for key in ids}
-        return make_dataset(features, subset, word_to_index, max_length,
-                            batch_size=args.batch_size, shuffle=shuffle)
+        builder = make_caption_dataset if args.arch == "seq2seq" else make_dataset
+        return builder(features, subset, word_to_index, max_length,
+                       batch_size=args.batch_size, shuffle=shuffle)
 
     train_ds = dataset_for(splits["train"], shuffle=True)
     val_ds = dataset_for(splits["val"], shuffle=False)
 
     feature_dim = int(features[splits["train"][0]][0].shape[0])
-    model = build_captioning_model(
-        vocab_size=vocab_size,
-        feature_dim=feature_dim,
-        embed_dim=args.embed_dim,
-        dropout=args.dropout,
-        max_length=max_length,
-    )
+    if args.arch == "seq2seq":
+        model = build_seq2seq_model(
+            vocab_size=vocab_size,
+            feature_dim=feature_dim,
+            embed_dim=args.embed_dim,
+            dropout=args.dropout,
+        )
+    else:
+        model = build_captioning_model(
+            vocab_size=vocab_size,
+            feature_dim=feature_dim,
+            embed_dim=args.embed_dim,
+            dropout=args.dropout,
+            max_length=max_length,
+        )
     if args.mixed_precision:
         tf.keras.mixed_precision.set_global_policy("mixed_float16")
         print("mixed precision: mixed_float16", flush=True)
@@ -144,6 +163,7 @@ def main(argv=None) -> int:
         json.dump(
             {
                 "max_length": max_length,
+                "arch": args.arch,
                 "vocab_size": vocab_size,
                 "embed_dim": args.embed_dim,
                 "feature_dim": feature_dim,

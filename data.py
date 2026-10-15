@@ -170,6 +170,110 @@ def decode(indices: Iterable[int], index_to_word: Mapping[int, str]) -> str:
     return " ".join(words).strip()
 
 
+def caption_examples(
+    image_ids: Iterable[str],
+    mapping: Mapping[str, Sequence[str]],
+    word_to_index: Mapping[str, int],
+    max_length: int,
+) -> tuple[list[int], list[list[int]], list[list[int]]]:
+    """One example per caption: the caption in, the same caption shifted by one out.
+
+    The alternative, :func:`training_pairs`, makes one example per *position*, so teaching a
+    five-word caption costs four passes over four growing prefixes and four weight updates.
+    This is the same supervision in one pass. Positions that are padding are masked out of
+    the loss by :func:`make_caption_dataset`.
+    """
+    ids = list(image_ids)
+    rows: list[int] = []
+    inputs: list[list[int]] = []
+    targets: list[list[int]] = []
+
+    for row, image_id in enumerate(ids):
+        for caption in mapping[image_id]:
+            sequence = encode(caption, word_to_index)
+            if len(sequence) < 2:
+                continue
+            rows.append(row)
+            inputs.append(sequence[:-1][:max_length])
+            targets.append(sequence[1:][:max_length])
+    return rows, inputs, targets
+
+
+def _padded_batches(rows, inputs, targets, batch_size: int, width_step: int = 8):
+    """Group captions into fixed-size batches, padding each to a rounded-up width.
+
+    Padding every batch to a different width makes the model rebuild its graph for each new
+    shape, which costs far more than the padding saves. Rounding the width up to a multiple
+    of ``width_step`` keeps the number of distinct shapes small while still avoiding padding
+    short captions out to the longest caption in the dataset.
+    """
+    import numpy as np
+
+    order = sorted(range(len(rows)), key=lambda index: len(inputs[index]))
+    batches = []
+    for start in range(0, len(order), batch_size):
+        chosen = order[start : start + batch_size]
+        width = max(len(inputs[index]) for index in chosen)
+        width = ((width + width_step - 1) // width_step) * width_step
+
+        batch_rows = np.asarray([rows[index] for index in chosen], dtype="int32")
+        batch_inputs = np.full((len(chosen), width), PAD_INDEX, dtype="int32")
+        batch_targets = np.full((len(chosen), width), PAD_INDEX, dtype="int32")
+        for position, index in enumerate(chosen):
+            length = len(inputs[index])
+            batch_inputs[position, :length] = inputs[index]
+            batch_targets[position, :length] = targets[index]
+        batches.append((batch_rows, batch_inputs, batch_targets))
+    return batches
+
+
+def make_caption_dataset(
+    features: dict,
+    mapping: Mapping[str, Sequence[str]],
+    word_to_index: Mapping[str, int],
+    max_length: int,
+    batch_size: int = 64,
+    shuffle: bool = True,
+    seed: int = 42,
+):
+    """A ``tf.data.Dataset`` of (image feature, caption) -> (next token per position, weight).
+
+    One example per caption, batched by length so a batch is padded to its own longest
+    caption. The weight is 1.0 on real positions and 0.0 on padding, which is how the loss
+    ignores padding without the model needing to know where a caption ends.
+    """
+    import tensorflow as tf
+
+    ids = list(mapping.keys())
+    rows, inputs, targets = caption_examples(ids, mapping, word_to_index, max_length)
+    if not rows:
+        raise ValueError("no usable captions: every caption was shorter than two tokens")
+    feature_rows = tf.constant(feature_matrix(features, ids))
+    batches = _padded_batches(rows, inputs, targets, batch_size)
+
+    dataset = tf.data.Dataset.from_generator(
+        lambda: iter(batches),
+        output_signature=(
+            tf.TensorSpec((None,), tf.int32),
+            tf.TensorSpec((None, None), tf.int32),
+            tf.TensorSpec((None, None), tf.int32),
+        ),
+    )
+    if shuffle:
+        # whole batches, so the length grouping above survives
+        dataset = dataset.shuffle(buffer_size=max(len(batches), 2), seed=seed,
+                                  reshuffle_each_iteration=True)
+
+    return dataset.map(
+        lambda row, tokens, target: (
+            (tf.gather(feature_rows, row), tokens),
+            target,
+            tf.cast(tf.not_equal(target, PAD_INDEX), "float32"),
+        ),
+        num_parallel_calls=tf.data.AUTOTUNE,
+    ).prefetch(tf.data.AUTOTUNE)
+
+
 def make_dataset(
     features: dict,
     mapping: Mapping[str, Sequence[str]],

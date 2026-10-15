@@ -65,26 +65,45 @@ preference:
   the version it is being moved off.
 * **BLEU-1 to BLEU-4 reported separately.** The original printed one BLEU figure, which is
   not comparable with the n-gram breakdown in the thesis.
+* **one pass per caption instead of one per position.** `--arch seq2seq` (the default) trains
+  on whole captions with teacher forcing; `--arch legacy` keeps the per-position path that
+  matches the trained artifact. See Performance below.
 
 Requires `tensorflow>=2.16` (Keras 3). The notebooks pin 2.15, which is no longer installable:
 Kaggle's oldest available version is 2.20, and no installable Windows wheel exists for it.
 
 ## Performance
 
-Measured on Kaggle under TensorFlow 2.20, on a 300-image subset:
+Measured on Kaggle under TensorFlow 2.20, on CPU.
 
-| | value |
+Training used to make one example per caption *position*: a caption of n words cost n-1
+passes over n-1 growing prefixes, which re-encodes the same words over and over. It now makes
+one example per caption and supervises every position in a single pass.
+
+| on a 300-image split | per-position | per-caption |
+| --- | --- | --- |
+| training examples | 3080 | 210 |
+| decoder steps | 26,064 | 3,080 |
+| redundant work | 8.46x the minimum | - |
+| LSTM | bidirectional | unidirectional |
+
+| one epoch, 200 images, batch 32 | seconds |
 | --- | --- |
-| training examples in the subset | 3080 |
-| pair storage, features duplicated per example | 50.5 MB |
-| pair storage, features gathered per batch | 0.3 MB (+3.4 MB of features, once) |
-| feeding rate | 42,000 examples/s |
-| one epoch | 20.7s |
+| per-position (`--arch legacy`) | 17.2s |
+| per-caption (`--arch seq2seq`, default) | **3.3s** |
 
-A caption of *n* words yields *n-1* training examples that all share one image feature, so
-repeating the vector per example cost about twenty copies of the whole feature set - the
-single largest waste in the original pipeline, and the reason a full-data run was heavy.
-Training knobs: `--mixed-precision`, `--steps-per-execution`, `--jit`.
+The 8.46x is measured, and it grows with caption length: the longer the captions, the more a
+pass over a growing prefix wastes. Separately, the training pairs used to repeat the full
+4096-float image vector once per example - about twenty copies of the whole feature set, and
+the reason a full-data run was heavy:
+
+| on a 300-image split | before | after |
+| --- | --- | --- |
+| pair storage, features duplicated per example | 50.5 MB | 0.3 MB (+3.4 MB of features, once) |
+
+Captions are batched by length and padded to a rounded width, so short captions are not padded
+out to the longest caption in the dataset and the model does not rebuild its graph per batch.
+Other knobs: `--mixed-precision`, `--steps-per-execution`, `--jit`.
 
 ## Notebooks
 
