@@ -85,7 +85,8 @@ def build_captioning_model(
     merged = Dense(embed_dim, activation="relu", name="decoder_dense")(merged)
     merged = Dropout(dropout, name="decoder_dropout")(merged)
 
-    outputs = Dense(vocab_size, activation="softmax", name="next_token")(merged)
+    # float32 on the output keeps a mixed_float16 run numerically stable
+    outputs = Dense(vocab_size, activation="softmax", name="next_token", dtype="float32")(merged)
 
     return Model(inputs=[features_in, tokens_in], outputs=outputs, name="captioning_model")
 

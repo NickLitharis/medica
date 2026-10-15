@@ -17,6 +17,7 @@ from data import (
     build_vocabulary,
     decode,
     encode,
+    feature_matrix,
     split_ids,
     training_pairs,
     wrap_captions,
@@ -99,12 +100,32 @@ def test_split_rejects_impossible_fractions():
 def test_training_pairs_cover_every_position_once():
     mapping = wrap_captions({"a": ["one two three"]})
     word_to_index, _ = build_vocabulary(mapping["a"])
-    images, prefixes, targets = training_pairs(["a"], mapping, word_to_index, max_length=8)
+    rows, prefixes, targets = training_pairs(["a"], mapping, word_to_index, max_length=8)
 
     sequence = encode(mapping["a"][0], word_to_index)
     assert len(targets) == len(sequence) - 1, "one example per position after the first token"
     assert targets == sequence[1:]
-    assert images == ["a"] * len(targets)
+    # the image is referenced by row, not copied in - that is what keeps memory flat
+    assert rows == [0] * len(targets)
+
+
+def test_training_pairs_reference_the_right_image_row():
+    mapping = wrap_captions({"a": ["one two"], "b": ["one two"]})
+    word_to_index, _ = build_vocabulary(["one two"])
+    rows, _, _ = training_pairs(["a", "b"], mapping, word_to_index, max_length=6)
+    assert set(rows) == {0, 1}
+    # identical captions, so each image contributes the same number of examples
+    assert rows.count(0) == rows.count(1) > 0
+
+
+def test_feature_matrix_has_one_row_per_image_not_per_example():
+    import numpy as np
+
+    features = {"a": [np.arange(4, dtype="float32")], "b": [np.arange(4, dtype="float32") + 10]}
+    matrix = feature_matrix(features, ["a", "b"])
+    assert matrix.shape == (2, 4)
+    assert matrix.dtype == np.float32
+    assert matrix[1][0] == 10
 
 
 def test_prefixes_are_left_padded_to_max_length():

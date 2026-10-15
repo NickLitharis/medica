@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
 from data import build_vocabulary, load_artifacts, make_dataset, split_ids, wrap_captions
@@ -39,7 +40,32 @@ def parse_args(argv=None):
                         help="use only the first N images (0 = all); for smoke runs")
     parser.add_argument("--min-count", type=int, default=5,
                         help="drop words appearing fewer times than this")
+    parser.add_argument("--mixed-precision", action="store_true",
+                        help="train in mixed_float16; a large speedup on GPU")
+    parser.add_argument("--steps-per-execution", type=int, default=1,
+                        help="batches per graph execution; raises throughput on GPU")
+    parser.add_argument("--jit", action="store_true",
+                        help="compile with XLA; faster where it applies, not always compatible")
+    parser.add_argument("--num-parallel-calls", type=int, default=0,
+                        help="0 = let tf.data decide (AUTOTUNE)")
     return parser.parse_args(argv)
+
+
+def epoch_timer():
+    """A real Keras callback that prints each epoch's wall-clock time, so tuning is measured."""
+    import tensorflow as tf
+
+    clock = {"started": 0.0}
+
+    def on_epoch_begin(epoch, logs=None):
+        clock["started"] = time.time()
+
+    def on_epoch_end(epoch, logs=None):
+        print(f"  [timing] epoch {epoch}: {time.time() - clock['started']:.1f}s", flush=True)
+
+    return tf.keras.callbacks.LambdaCallback(
+        on_epoch_begin=on_epoch_begin, on_epoch_end=on_epoch_end
+    )
 
 
 def main(argv=None) -> int:
@@ -86,10 +112,16 @@ def main(argv=None) -> int:
         dropout=args.dropout,
         max_length=max_length,
     )
+    if args.mixed_precision:
+        tf.keras.mixed_precision.set_global_policy("mixed_float16")
+        print("mixed precision: mixed_float16", flush=True)
+
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=args.learning_rate),
         loss=tf.keras.losses.SparseCategoricalCrossentropy(),
         metrics=["accuracy"],
+        steps_per_execution=args.steps_per_execution,
+        jit_compile=args.jit,
     )
     model.summary()
 
@@ -103,6 +135,7 @@ def main(argv=None) -> int:
             EarlyStopping(monitor="val_loss", patience=5, restore_best_weights=True, verbose=1),
             ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=3, min_lr=1e-5, verbose=1),
             CSVLogger(out / "training_log.csv"),
+            epoch_timer(),
         ],
     )
 

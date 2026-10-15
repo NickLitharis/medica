@@ -125,24 +125,37 @@ def training_pairs(
     mapping: Mapping[str, Sequence[str]],
     word_to_index: Mapping[str, int],
     max_length: int,
-) -> tuple[list[list[int]], list[list[int]], list[int]]:
-    """Every (image feature, caption prefix, next token) triple for the given images.
+) -> tuple[list[int], list[list[int]], list[int]]:
+    """Every (image row, caption prefix, next token) triple for the given images.
 
-    One example per position, which is how the original generator worked; doing it once
-    up front is what removes the per-epoch re-tokenisation.
+    The image is returned as a *row index*, not a vector. A caption of n words yields n-1
+    examples, all sharing one 4096-float feature, so repeating the vector per example would
+    mean ~20 copies of the whole feature set. The feature is gathered once per batch
+    instead, in :func:`make_dataset`.
     """
-    features, prefixes, targets = [], [], []
-    for image_id in image_ids:
+    ids = list(image_ids)
+    row_of = {image_id: row for row, image_id in enumerate(ids)}
+    rows: list[int] = []
+    prefixes: list[list[int]] = []
+    targets: list[int] = []
+
+    for image_id in ids:
         for caption in mapping[image_id]:
             sequence = encode(caption, word_to_index)
             for position in range(1, len(sequence)):
                 prefix = sequence[:position][-max_length:]
                 # left-pad, as the notebooks did: the prefix sits at the end of the row
-                padded = [PAD_INDEX] * (max_length - len(prefix)) + prefix
-                features.append(image_id)
-                prefixes.append(padded)
+                rows.append(row_of[image_id])
+                prefixes.append([PAD_INDEX] * (max_length - len(prefix)) + prefix)
                 targets.append(sequence[position])
-    return features, prefixes, targets
+    return rows, prefixes, targets
+
+
+def feature_matrix(features: Mapping[str, Sequence], image_ids: Iterable[str]):
+    """One feature row per image - not one per training example."""
+    import numpy as np
+
+    return np.asarray([features[image_id][0] for image_id in image_ids], dtype="float32")
 
 
 def decode(indices: Iterable[int], index_to_word: Mapping[int, str]) -> str:
@@ -168,22 +181,41 @@ def make_dataset(
 ):
     """Build a ``tf.data.Dataset`` of (image feature, prefix) -> next token.
 
-    Labels stay as integers: the model uses sparse categorical cross-entropy, where the
+    Two things keep this cheap:
+
+    * the pairs carry an image *row index*, and the feature is gathered once per batch, so
+      the feature set is not copied per example;
+    * only the small index/prefix/target arrays are cached, and the gather happens on the
+      batched tensor, off the critical path.
+
+    Labels stay integers: the model uses sparse categorical cross-entropy, where the
     original built a one-hot vector per example with ``to_categorical``.
     """
     import numpy as np
     import tensorflow as tf
 
-    ids, prefixes, targets = training_pairs(list(mapping.keys()), mapping, word_to_index, max_length)
-    feature_matrix = np.asarray([features[image_id][0] for image_id in ids], dtype="float32")
-    prefix_matrix = np.asarray(prefixes, dtype="int32")
-    target_vector = np.asarray(targets, dtype="int32")
+    ids = list(mapping.keys())
+    rows, prefixes, targets = training_pairs(ids, mapping, word_to_index, max_length)
+    feature_rows = tf.constant(feature_matrix(features, ids))
 
     dataset = tf.data.Dataset.from_tensor_slices(
-        ((feature_matrix, prefix_matrix), target_vector)
+        (
+            (np.asarray(rows, dtype="int32"), np.asarray(prefixes, dtype="int32")),
+            np.asarray(targets, dtype="int32"),
+        )
     )
+    # the index/prefix/target arrays are small; the feature gather is left out of the cache
+    dataset = dataset.cache()
     if shuffle:
         dataset = dataset.shuffle(
-            buffer_size=min(len(target_vector), 10_000), seed=seed, reshuffle_each_iteration=True
+            buffer_size=min(len(targets), 100_000), seed=seed, reshuffle_each_iteration=True
         )
-    return dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    dataset = dataset.batch(batch_size)
+    dataset = dataset.map(
+        lambda inputs, label: (
+            (tf.gather(feature_rows, inputs[0]), inputs[1]),
+            label,
+        ),
+        num_parallel_calls=tf.data.AUTOTUNE,
+    )
+    return dataset.prefetch(tf.data.AUTOTUNE)

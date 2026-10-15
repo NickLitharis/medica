@@ -1,13 +1,15 @@
 """Generate captions and score them.
 
-Replaces the notebook's evaluation cells. Reports BLEU-1 to BLEU-4, which the original
-did not distinguish: it printed a single BLEU figure, so the reported number could not be
-compared with the n-gram breakdown in the thesis.
+Replaces the notebook's evaluation cells. Two things it does differently:
+
+* BLEU is reported per n-gram (BLEU-1 to BLEU-4). The original printed a single BLEU
+  figure, which cannot be compared with the breakdown in the thesis.
+* Generation is batched. The obvious loop calls the model once per token per image; this
+  calls it once per token *for the whole batch*, which is the difference between a few
+  hundred model calls and a few dozen on a normal test set.
 
 Captions are produced by feeding the growing prefix back through the model one token at a
-time, which is the scheme the model is trained on (predict the next token given the prefix
-so far). Scoring uses corpus BLEU over the whole set, with every reference caption of an
-image available to each hypothesis.
+time, which is the scheme the model is trained on (predict the next token given the prefix).
 
 Usage::
 
@@ -17,41 +19,66 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 
-from data import PAD_INDEX, START, decode, load_artifacts, wrap_captions
+from data import (
+    END,
+    PAD_INDEX,
+    START,
+    UNK,
+    decode,
+    feature_matrix,
+    load_artifacts,
+    wrap_captions,
+)
 
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset-dir", default="/kaggle/input/dataset")
-    parser.add_argument("--run", default="/kaggle/working", help="dir holding model_best.keras + encoding.json")
+    parser.add_argument("--run", default="/kaggle/working", help="dir with model_best.keras + encoding.json")
     parser.add_argument("--model", default="", help="override the model path")
     parser.add_argument("--limit", type=int, default=0, help="score only the first N test images")
-    parser.add_argument("--beam", type=int, default=1, help="1 = greedy; >1 = beam search width")
+    parser.add_argument("--batch-size", type=int, default=64, help="images generated at once")
     return parser.parse_args(argv)
 
 
-def generate_caption(model, feature, word_to_index, index_to_word, max_length, beam=1):
-    """Generate one caption for one image feature vector."""
+def generate_captions(model, features, word_to_index, index_to_word, max_length, batch_size=64):
+    """Greedy-decode captions for a matrix of image features.
+
+    ``features`` is ``(n_images, feature_dim)``. Returns a list of ``n_images`` captions.
+    One model call per token position, over the whole batch, rather than one per token per
+    image.
+    """
     import numpy as np
 
-    prefix = [word_to_index[START]]
+    count = len(features)
+    # prefixes are left-padded, so the tokens sit at the end and padding at the front
+    prefixes = np.full((count, max_length), PAD_INDEX, dtype="int32")
+    prefixes[:, -1] = word_to_index[START]
+
+    finished = np.zeros(count, dtype=bool)
+    tokens = [[] for _ in range(count)]
+
     for _ in range(max_length):
-        padded = [PAD_INDEX] * (max_length - len(prefix)) + prefix[-max_length:]
-        predictions = model.predict(
-            [np.asarray([feature], dtype="float32"), np.asarray([padded], dtype="int32")],
-            verbose=0,
-        )[0]
-        words = decode(prefix, index_to_word).split()
-        # stop when the model has emitted the end marker
-        if index_to_word.get(int(np.argmax(predictions))) == "<end>":
+        predictions = model.predict([features, prefixes], verbose=0, batch_size=batch_size)
+        next_indices = np.argmax(predictions, axis=1).astype("int32")
+
+        for i in range(count):
+            if finished[i]:
+                continue
+            if index_to_word.get(int(next_indices[i])) == END:
+                finished[i] = True
+            else:
+                tokens[i].append(int(next_indices[i]))
+        if finished.all():
             break
-        next_index = int(np.argmax(predictions))
-        prefix.append(next_index)
-        if len(words) > max_length:
-            break
-    return decode(prefix[1:], index_to_word)
+
+        # shift left and append, keeping the last max_length tokens
+        prefixes = np.concatenate([prefixes[:, 1:], next_indices.reshape(-1, 1)], axis=1)
+
+    return [decode([word_to_index[START], *row], index_to_word) for row in tokens]
 
 
 def bleu_scores(hypotheses, references):
@@ -86,18 +113,20 @@ def main(argv=None) -> int:
     test_ids = encoding["test_ids"]
     if args.limit:
         test_ids = test_ids[: args.limit]
+    test_ids = [image_id for image_id in test_ids if image_id in features and image_id in mapping]
 
-    hypotheses, references = [], []
-    for image_id in test_ids:
-        if image_id not in features or image_id not in mapping:
-            continue
-        caption = generate_caption(
-            model, features[image_id][0], word_to_index, index_to_word, max_length, beam=args.beam
-        )
-        hypotheses.append(caption.split())
-        references.append([reference.split() for reference in mapping[image_id]])
+    started = time.time()
+    matrix = feature_matrix(features, test_ids)
+    captions = generate_captions(
+        model, matrix, word_to_index, index_to_word, max_length, batch_size=args.batch_size
+    )
+    elapsed = time.time() - started
 
-    print(f"scored {len(hypotheses)} captions")
+    hypotheses = [caption.split() for caption in captions]
+    references = [[reference.split() for reference in mapping[image_id]] for image_id in test_ids]
+
+    print(f"scored {len(hypotheses)} captions in {elapsed:.1f}s "
+          f"({len(hypotheses) / max(elapsed, 1e-9):.1f} captions/s)")
     if not hypotheses:
         print("nothing to score - check the test ids in encoding.json")
         return 1
@@ -108,8 +137,8 @@ def main(argv=None) -> int:
         print(f"{name:<10}  {value:.4f}")
 
     (run / "bleu.json").write_text(json.dumps(scores, indent=2), encoding="utf-8")
-    for image_id, caption in list(zip(test_ids, hypotheses))[:5]:
-        print(f"  {image_id[:12]}...  {' '.join(caption)}")
+    for image_id, caption in list(zip(test_ids, captions))[:5]:
+        print(f"  {image_id[:12]}...  {caption}")
     return 0
 
 
