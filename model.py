@@ -60,9 +60,12 @@ def build_captioning_model(
         raise ValueError(f"feature_dim must be positive, got {feature_dim}")
 
     # Image features -> the vector that the decoder output is added to.
+    # Note the width: a Bidirectional LSTM emits embed_dim per direction, so the attended
+    # sequence is 2 * embed_dim wide and this projection must match it for the Add below.
+    # The trained model does the same thing - Dense(512) against LSTM(256) per direction.
     features_in = Input(shape=(feature_dim,), name="image_features")
     fe = Dropout(dropout, name="feature_dropout")(features_in)
-    fe = Dense(embed_dim, activation="relu", name="feature_projection")(fe)
+    fe = Dense(2 * embed_dim, activation="relu", name="feature_projection")(fe)
 
     # Caption tokens -> sequence representation.
     tokens_in = Input(shape=(max_length,) if max_length else (None,), name="caption_tokens")
@@ -77,7 +80,7 @@ def build_captioning_model(
     context = Attention(name="attention")([sequence, sequence])
     context = GlobalAveragePooling1D(name="attention_pool")(context)
 
-    # Fuse the image vector with the attended text vector.
+    # Fuse the image vector with the attended text vector (both 2 * embed_dim wide).
     merged = Add(name="fuse")([fe, context])
     merged = Dense(embed_dim, activation="relu", name="decoder_dense")(merged)
     merged = Dropout(dropout, name="decoder_dropout")(merged)
@@ -88,5 +91,19 @@ def build_captioning_model(
 
 
 def layer_names(model: Model) -> list[str]:
-    """Flatten the layer classes, for tests and for comparing against the trained model."""
-    return [layer.__class__.__name__ for layer in model.layers]
+    """Every layer class in the graph, including layers nested inside wrappers.
+
+    A `Bidirectional` wrapper keeps its `LSTM`s as sub-layers, and Keras 3 no longer
+    lists those at the top level, so walking recursively keeps this working on both
+    Keras 2 (the pinned TensorFlow 2.15) and Keras 3.
+    """
+    names: list[str] = []
+
+    def walk(layer) -> None:
+        names.append(layer.__class__.__name__)
+        for sub in getattr(layer, "layers", []) or []:
+            walk(sub)
+
+    for layer in model.layers:
+        walk(layer)
+    return names

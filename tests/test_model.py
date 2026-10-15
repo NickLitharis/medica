@@ -29,10 +29,17 @@ def test_has_the_attention_layer(model):
 
 
 def test_matches_the_trained_model_layer_stack(model):
-    classes = layer_names(model)
+    """Compare against the layer classes the trained model's own config records.
+
+    Reading `model.to_json()` rather than `model.layers` keeps this independent of how a
+    given Keras version exposes nested layers (a Bidirectional's LSTMs are sub-layers),
+    and it compares like for like: the trained model's layer list was read from its
+    config in exactly the same way.
+    """
+    config = model.to_json().replace(" ", "").replace("\n", "")
     for expected in ("InputLayer", "Embedding", "Bidirectional", "LSTM", "Attention",
                      "GlobalAveragePooling1D", "Add", "Dense"):
-        assert expected in classes, f"{expected} missing from the architecture"
+        assert f'"class_name":"{expected}"' in config, f"{expected} missing from the model config"
 
 
 def test_two_inputs_one_output(model):
