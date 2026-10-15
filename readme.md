@@ -103,7 +103,36 @@ the reason a full-data run was heavy:
 
 Captions are batched by length and padded to a rounded width, so short captions are not padded
 out to the longest caption in the dataset and the model does not rebuild its graph per batch.
-Other knobs: `--mixed-precision`, `--steps-per-execution`, `--jit`.
+
+### On a GPU
+
+Kaggle gives two Tesla T4s. Steady-state epoch times, 1050 training images, first epoch
+(dropped: it builds the graph) excluded:
+
+| configuration | seconds/epoch | ms/image |
+| --- | --- | --- |
+| batch 64, mixed_float16 | 0.24 | 0.23 |
+| batch 128, mixed_float16 | 0.17 | 0.16 |
+| batch 256, mixed_float16 | **0.14** | **0.13** |
+| batch 128 + XLA (`--jit`) | 0.16 | 0.16 |
+| batch 128 + `--steps-per-execution 8` | 0.16 | 0.16 |
+| batch 128 + XLA + steps 8 | 0.16 | 0.15 |
+| batch 128, float32 (mixed off) | 0.16 | 0.15 |
+| batch 128, 15 epochs (drift check) | 0.16 | 0.15 |
+| `MirroredStrategy`, both T4s | fails (`InvalidArgumentError`) | - |
+
+What this says, and it is not what the flag names suggest:
+
+* **batch size is the only lever that moved the number** - 64 to 256 is about 1.7x, because
+  fewer, larger steps mean fewer kernel launches;
+* **XLA, `steps_per_execution` and mixed precision made no measurable difference.** The model
+  is small and its LSTM is already cuDNN-backed, so a step costs more to launch than to
+  compute. Mixed precision is harmless, not helpful;
+* **two GPUs do not work here** and would not help a model this size anyway.
+
+Extrapolating 0.13 ms/image over the full 49,287-image dataset gives roughly 6 s/epoch, so a
+30-epoch run is minutes rather than hours. That extrapolation is not yet measured at full
+scale.
 
 ## Notebooks
 
