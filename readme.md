@@ -2,6 +2,19 @@
 
 This project is a university thesis and implements an image captioning system using deep learning techniques, combining Convolutional Neural Networks (CNNs) for image feature extraction and Recurrent Neural Networks (RNNs) with attention mechanisms for generating descriptive captions.
 
+## Results
+
+Trained and evaluated on the **ImageCLEF 2017 Medical Image Captioning** benchmark, scored with BLEU against the published baselines the thesis compares with:
+
+| Model | BLEU-1 | BLEU-2 |
+| --- | --- | --- |
+| ImageCLEF 2017 reference model | 0.142 | 0.070 |
+| Retinal Image Captioning | 0.158 | 0.076 |
+| Global-Local Visual Extractor | 0.148 | 0.074 |
+| **OLIVER — this work (CNN + attention RNN)** | **0.309** | **0.205** |
+
+The hybrid CNN-RNN model with integrated attention — named *OLIVER* in the thesis — scored highest on both metrics. Scores are reported in Appendix D of the thesis; `model_usage.ipynb` regenerates the evaluation.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
