@@ -15,6 +15,23 @@ Trained and evaluated on the **ImageCLEF 2017 Medical Image Captioning** benchma
 
 The hybrid CNN-RNN model with integrated attention — named *OLIVER* in the thesis — scored highest on both metrics. Scores are reported in Appendix D of the thesis; `model_usage.ipynb` regenerates the evaluation.
 
+## Model architecture
+
+The decoder is attention-based rather than a plain RNN. Read out of the trained model file
+(`model_epoch_50.h5`, held in a private Kaggle dataset and not committed here):
+
+```
+Embedding  ->  Bidirectional(LSTM)  ->  Dropout
+Attention
+Dense  ->  GlobalAveragePooling1D  ->  Add      (image features fused with attention output)
+Dense  ->  Dropout  ->  Dense(softmax)
+```
+
+Image features reach the model **pre-extracted** (`image_features.pkl`), which is why no
+convolutional layer appears in the model file: the CNN is the feature-extraction stage that
+produces those features, and the model itself is the attention-augmented bidirectional LSTM
+decoder over them.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
