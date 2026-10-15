@@ -69,6 +69,23 @@ preference:
 Requires `tensorflow>=2.16` (Keras 3). The notebooks pin 2.15, which is no longer installable:
 Kaggle's oldest available version is 2.20, and no installable Windows wheel exists for it.
 
+## Performance
+
+Measured on Kaggle under TensorFlow 2.20, on a 300-image subset:
+
+| | value |
+| --- | --- |
+| training examples in the subset | 3080 |
+| pair storage, features duplicated per example | 50.5 MB |
+| pair storage, features gathered per batch | 0.3 MB (+3.4 MB of features, once) |
+| feeding rate | 42,000 examples/s |
+| one epoch | 20.7s |
+
+A caption of *n* words yields *n-1* training examples that all share one image feature, so
+repeating the vector per example cost about twenty copies of the whole feature set - the
+single largest waste in the original pipeline, and the reason a full-data run was heavy.
+Training knobs: `--mixed-precision`, `--steps-per-execution`, `--jit`.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
