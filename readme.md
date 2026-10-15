@@ -11,14 +11,15 @@ This project is a university thesis and implements an image captioning system us
 
 - `model_training_preprocessing.ipynb`: Notebook for model training and data preprocessing.
 - `model_usage.ipynb`: Notebook for model inference, evaluation, and visualization.
-- `thesis.ipynb`: Original notebook (legacy, not updated).
-- `dataset/`: Folder containing preprocessed data files:
+- `requirements.txt`: List of required Python packages.
+- `LICENSE` / `LICENSE-THESIS.txt` / `DATA_LICENSE.txt`: Licensing for the code, the thesis document, and the dataset respectively.
+
+The preprocessed dataset is **not committed** (see `DATA_LICENSE.txt`). To reproduce the pipeline, supply your own `dataset/` folder containing:
 	- `image_features.pkl`: Extracted image features (typically from a CNN).
 	- `captions.pkl`: Dictionary mapping image IDs to their captions.
 	- `max_length.pkl`: Maximum caption length for padding.
 	- `tokenizer.pkl`: Fitted tokenizer for text preprocessing.
 	- `vocab_size.pkl`: Vocabulary size for the model.
-- `requirements.txt`: List of required Python packages.
 
 ## Workflow Overview
 
