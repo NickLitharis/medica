@@ -36,11 +36,32 @@ The artifact scored BLEU-1 0.1994 and corpus BLEU 0.0319 when evaluated the way
 `model_usage.ipynb` does — over every image, including the ones it trained on — so that
 figure is in-sample and inflated by construction.
 
-**Neither reproduces the 0.309 in the table above.** On held-out data the artifact scores
-0.1627. Note that `model_usage.ipynb` loads `model_final.h5`, while the artifact available
-here is `model_epoch_50.h5`, so the 0.309 may belong to a different checkpoint; and the
-baseline rows above were produced by the thesis's own evaluation code, which this comparison
-did not run.
+**Nothing reproduces the 0.309 in the table above.** Every checkpoint saved to Kaggle was
+scored on this same split with this same BLEU implementation:
+
+| checkpoint | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 | corpus BLEU |
+| --- | --- | --- | --- | --- | --- |
+| `cnn-rnn-att100/model_epoch_100.h5` | **0.1681** | 0.0890 | 0.0463 | 0.0265 | 0.0265 |
+| `cnn-rnn-att/model_epoch_50.h5` | 0.1627 | 0.0815 | 0.0377 | 0.0178 | 0.0178 |
+| `med-model/model_50.h5` | 0.1617 | 0.0756 | 0.0348 | 0.0179 | 0.0179 |
+| `trained-model/model.h5` | 0.1432 | 0.0611 | 0.0294 | 0.0180 | 0.0180 |
+| `model80/model_epoch_40(1).h5` | 0.1271 | 0.0625 | 0.0273 | 0.0120 | 0.0120 |
+| `newmodel/model_final.h5` | 0.1104 | 0.0461 | 0.0171 | 0.0064 | 0.0064 |
+| `model70/model_epoch_40.h5` | 0.1004 | 0.0450 | 0.0170 | 0.0061 | 0.0061 |
+
+The best of the seven scores 0.1681, which is 1.8x short of 0.309, and the modernised model's
+0.1623 sits inside this range. Scoring in-sample does not close it either: re-scoring
+`model_epoch_50.h5` the notebook's way — over 10,000 images, including ones it trained on —
+lifts it only to 0.1994 BLEU-1.
+
+Two notes on that table. `model_final.h5` is the **weakest** of the seven despite its name:
+`thesis.ipynb` cell 18 loads an existing model and saves it again under that name, so the
+filename says nothing about which epoch it holds. And two further artifacts (`newh5model`,
+`h5model`) do not load under Keras 3 at all — their saved configs feed an LSTM initial state
+positionally, which Keras 3 rejects — so they are untested here.
+
+Either the 0.309 came from a checkpoint that was never saved to Kaggle, or from something
+other than a held-out corpus BLEU. On the artifacts that exist, it is not reproducible.
 
 Scoring the modernised model against the raw captions (rather than the `<start>`-wrapped
 ones) moved its BLEU-1 from 0.1330 to 0.1623; the earlier figure was depressed by a bug in
