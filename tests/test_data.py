@@ -24,7 +24,6 @@ from data import (
     usable_mapping,
     wrap_captions,
 )
-
 RAW = {
     "a": ["a small image", "a small cat"],
     "b": ["a dog"],
@@ -206,6 +205,43 @@ def test_usable_mapping_keeps_everything_when_nothing_is_missing():
     mapping = {"a": ["one two"], "b": ["three four"]}
     features = {"a": [0], "b": [0]}
     assert usable_mapping(mapping, features) == mapping
+
+
+def test_split_ids_keeps_identical_captions_inside_one_split():
+    """MedICaT reuses a caption across figures; that must not straddle the split."""
+    ids = [f"img{i:03d}" for i in range(60)]
+    caption = {image_id: ("shared caption" if i < 12 else f"unique caption {i}")
+               for i, image_id in enumerate(ids)}
+
+    splits = split_ids(ids, seed=3, group_of=lambda image_id: caption[image_id])
+    where = {image_id: name for name, members in splits.items() for image_id in members}
+
+    assert sorted(where) == sorted(ids), "every id must land somewhere"
+    landing = {where[f"img{i:03d}"] for i in range(12)}
+    assert len(landing) == 1, f"the shared caption appeared in more than one split: {landing}"
+
+
+def test_split_ids_grouped_splits_stay_disjoint():
+    ids = [f"img{i:03d}" for i in range(60)]
+    caption = {image_id: f"caption {i // 7}" for i, image_id in enumerate(ids)}
+    splits = split_ids(ids, seed=5, group_of=lambda image_id: caption[image_id])
+
+    train, val, test = (set(splits[name]) for name in ("train", "val", "test"))
+    assert not train & val and not train & test and not val & test
+    assert train | val | test == set(ids)
+
+
+def test_split_ids_without_grouping_is_unchanged():
+    ids = [f"img{i:03d}" for i in range(50)]
+    assert split_ids(ids, seed=7) == split_ids(ids, seed=7, group_of=None)
+
+
+def test_split_ids_is_reproducible_with_grouping():
+    ids = [f"img{i:03d}" for i in range(50)]
+    caption = {image_id: f"caption {i % 5}" for i, image_id in enumerate(ids)}
+    first = split_ids(ids, seed=11, group_of=lambda i: caption[i])
+    second = split_ids(ids, seed=11, group_of=lambda i: caption[i])
+    assert first == second
 
 
 def test_feature_matrix_has_one_row_per_image_not_per_example():

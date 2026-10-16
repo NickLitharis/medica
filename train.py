@@ -105,7 +105,13 @@ def main(argv=None) -> int:
     word_to_index, index_to_word = build_vocabulary(all_captions, min_count=args.min_count)
     vocab_size = len(word_to_index) + 1  # + the padding slot
 
-    splits = split_ids(list(mapping), val_size=args.val_size, test_size=args.test_size)
+    splits = split_ids(
+        list(mapping),
+        val_size=args.val_size,
+        test_size=args.test_size,
+        # keep identical captions inside one split: MedICaT reuses a caption across figures
+        group_of=lambda image_id: mapping[image_id][0].strip().lower(),
+    )
     print(f"images: {len(mapping)}  vocab: {vocab_size}  max_length: {max_length}  arch: {args.arch}")
     print(f"train: {len(splits['train'])}  val: {len(splits['val'])}  test: {len(splits['test'])}")
 

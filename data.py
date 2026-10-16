@@ -20,7 +20,7 @@ from __future__ import annotations
 import pickle
 import random
 from pathlib import Path
-from typing import Iterable, Mapping, Sequence
+from typing import Callable, Iterable, Mapping, Sequence
 
 START = "<start>"
 END = "<end>"
@@ -111,10 +111,17 @@ def split_ids(
     val_size: float = 0.1,
     test_size: float = 0.2,
     seed: int = 42,
+    group_of: Callable[[str], str] | None = None,
 ) -> dict[str, list[str]]:
     """Shuffle the ids once, then cut them into train/validation/test.
 
     Returns a dict with the three keys. The sets are disjoint and cover every id.
+
+    ``group_of`` maps an id to a grouping key - pass the caption text. Ids sharing a key stay
+    inside one split. MedICaT reuses the same caption across different figures (577 of these
+    images share a caption with another once the `Figure N.` label is removed), so without
+    this the identical sentence lands in training and test data alike and part of the score
+    is memorisation. Grouping makes the split proportions approximate rather than exact.
     """
     if not 0.0 <= val_size < 1.0 or not 0.0 <= test_size < 1.0:
         raise ValueError("val_size and test_size must be in [0, 1)")
@@ -124,15 +131,25 @@ def split_ids(
     ids = list(image_ids)
     if not ids:
         raise ValueError("cannot split an empty id list")
-    random.Random(seed).shuffle(ids)
 
-    n_test = int(len(ids) * test_size)
-    n_val = int(len(ids) * val_size)
-    return {
-        "test": ids[:n_test],
-        "val": ids[n_test : n_test + n_val],
-        "train": ids[n_test + n_val :],
-    }
+    rng = random.Random(seed)
+    if group_of is None:
+        rng.shuffle(ids)
+        units = [[image_id] for image_id in ids]
+    else:
+        grouped: dict[str, list[str]] = {}
+        for image_id in ids:
+            grouped.setdefault(group_of(image_id), []).append(image_id)
+        keys = sorted(grouped)
+        rng.shuffle(keys)
+        units = [grouped[key] for key in keys]
+
+    n_test = int(len(units) * test_size)
+    n_val = int(len(units) * val_size)
+    test = [image_id for unit in units[:n_test] for image_id in unit]
+    val = [image_id for unit in units[n_test : n_test + n_val] for image_id in unit]
+    train = [image_id for unit in units[n_test + n_val :] for image_id in unit]
+    return {"test": test, "val": val, "train": train}
 
 
 def encode(caption: str, word_to_index: Mapping[str, int]) -> list[int]:
