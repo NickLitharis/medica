@@ -13,6 +13,9 @@ Trained and evaluated on the **ImageCLEF 2017 Medical Image Captioning** benchma
 | Global-Local Visual Extractor | 0.148 | 0.074 |
 | **OLIVER — this work (CNN + attention RNN)** | **0.309** | **0.205** |
 
+The two OLIVER figures are in-sample, on 100 training images — see
+[Where the 0.309 comes from](#where-the-0309-comes-from) below.
+
 The hybrid CNN-RNN model with integrated attention — named *OLIVER* in the thesis — scored highest on both metrics. Scores are reported in Appendix D of the thesis; `model_usage.ipynb` regenerates the evaluation.
 
 ### Modernised pipeline, and a like-for-like comparison
@@ -49,10 +52,7 @@ scored on this same split with this same BLEU implementation:
 | `newmodel/model_final.h5` | 0.1104 | 0.0461 | 0.0171 | 0.0064 | 0.0064 |
 | `model70/model_epoch_40.h5` | 0.1004 | 0.0450 | 0.0170 | 0.0061 | 0.0061 |
 
-The best of the seven scores 0.1681, which is 1.8x short of 0.309, and the modernised model's
-0.1623 sits inside this range. Scoring in-sample does not close it either: re-scoring
-`model_epoch_50.h5` the notebook's way — over 10,000 images, including ones it trained on —
-lifts it only to 0.1994 BLEU-1.
+The best of the seven scores 0.1681 and the modernised model's 0.1623 sits inside this range.
 
 Two notes on that table. `model_final.h5` is the **weakest** of the seven despite its name:
 `thesis.ipynb` cell 18 loads an existing model and saves it again under that name, so the
@@ -60,8 +60,26 @@ filename says nothing about which epoch it holds. And two further artifacts (`ne
 `h5model`) do not load under Keras 3 at all — their saved configs feed an LSTM initial state
 positionally, which Keras 3 rejects — so they are untested here.
 
-Either the 0.309 came from a checkpoint that was never saved to Kaggle, or from something
-other than a held-out corpus BLEU. On the artifacts that exist, it is not reproducible.
+### Where the 0.309 comes from
+
+`thesis.ipynb` cell 10 splits positionally —
+`train = image_ids[:int(len(image_ids) * 0.7)]` — and cell 28 then evaluates
+`list(mapping.keys())[:100]`: **the first 100 images, every one of them a training image.**
+Reproducing that cell exactly, against 100 held-out images from the same checkpoints:
+
+| checkpoint | set | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 |
+| --- | --- | --- | --- | --- | --- |
+| `cnn-rnn-att/model_epoch_50.h5` | first 100 (training) | 0.4556 | 0.3153 | 0.2468 | 0.1464 |
+| `cnn-rnn-att/model_epoch_50.h5` | 100 held-out | 0.1584 | 0.0846 | 0.0587 | 0.0168 |
+| `cnn-rnn-att100/model_epoch_100.h5` | first 100 (training) | 0.6300 | 0.5155 | 0.4538 | 0.3475 |
+| `cnn-rnn-att100/model_epoch_100.h5` | 100 held-out | 0.1692 | 0.0864 | 0.0515 | 0.0185 |
+| `newmodel/model_final.h5` | first 100 (training) | 0.3568 | 0.1938 | 0.1233 | 0.0470 |
+| `newmodel/model_final.h5` | 100 held-out | 0.1056 | 0.0399 | 0.0204 | 0.0000 |
+
+The reported 0.309 / 0.205 sits inside the training-100 column and far above every held-out
+number, so it is a 100-image, in-sample measurement — the same code, the same weights, but
+evaluated on data the model had trained on. The ImageCLEF rows at the top of this section are
+published held-out scores, so that comparison is not like for like.
 
 Scoring the modernised model against the raw captions (rather than the `<start>`-wrapped
 ones) moved its BLEU-1 from 0.1330 to 0.1623; the earlier figure was depressed by a bug in
