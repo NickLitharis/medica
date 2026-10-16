@@ -208,6 +208,31 @@ Extrapolating 0.13 ms/image over the full 49,287-image dataset gives roughly 6 s
 30-epoch run is minutes rather than hours. That extrapolation is not yet measured at full
 scale.
 
+## Does the image matter?
+
+An ablation on 3,000 held-out images: the same checkpoints scored with the real features, with
+another image's features (a permutation, so the distribution is unchanged), and with the image
+zeroed.
+
+| model | real | permuted | no image |
+| --- | --- | --- | --- |
+| modernised, BLEU-1 | 0.1665 | 0.1154 | 0.1419 |
+| modernised, BLEU-4 | 0.0234 | 0.0076 | 0.0121 |
+| `model_epoch_50.h5`, BLEU-1 | 0.1598 | 0.1188 | 0.0856 |
+
+**The image is used.** Handing a model a different image costs it 0.041–0.051 BLEU-1, well
+outside seed noise, so it is reading the features rather than reciting captions.
+
+**But the language prior carries most of the score.** The modernised model still reaches 0.1419
+with no image at all — about 85% of its 0.1665 — so only a small part of the result comes from
+looking at the picture. The zeroed-image row is a weaker control than the permuted one (a zero
+vector is out of distribution), which is why the permuted column is the one to read.
+
+That combination is the diagnosis for this dataset: a single pooled feature vector per image
+and roughly one caption per image. The decoder has learned the shape of a radiology caption
+well, and has little image detail available to be more specific with. It is the argument for
+spatial features over better decoding.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
