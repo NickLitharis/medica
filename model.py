@@ -145,6 +145,53 @@ def build_seq2seq_model(
     return Model(inputs=[features_in, tokens_in], outputs=outputs, name="captioning_seq2seq")
 
 
+def build_region_model(
+    vocab_size: int,
+    region_dim: int = 512,
+    region_count: int = 49,
+    embed_dim: int = DEFAULT_EMBED_DIM,
+    dropout: float = DEFAULT_DROPOUT,
+) -> Model:
+    """The teacher-forced decoder conditioned on a grid of image regions.
+
+    Same decoder as :func:`build_seq2seq_model`, except that the image arrives as
+    ``region_count`` vectors instead of one pooled vector, and each caption position attends
+    over them. That is the difference between asking a model to describe a whole radiograph
+    at once and letting it look at the part it is writing about: a finding belongs to a
+    region, not to an average.
+
+    The region grid is 7x7 from a conv backbone, channel-pooled to 512. Attention is not
+    causal here - unlike the caption, the image has no future to hide.
+    """
+    if vocab_size <= 1:
+        raise ValueError(f"vocab_size must be greater than 1, got {vocab_size}")
+    if region_dim <= 0 or region_count <= 0:
+        raise ValueError("region_dim and region_count must be positive")
+
+    regions_in = Input(shape=(region_count, region_dim), name="image_regions")
+    regions = Dropout(dropout, name="region_dropout")(regions_in)
+    regions = Dense(embed_dim, activation="relu", name="region_projection")(regions)
+
+    tokens_in = Input(shape=(None,), name="caption_tokens")
+    tokens = Embedding(vocab_size, embed_dim, mask_zero=True, name="token_embedding")(tokens_in)
+    tokens = Dropout(dropout, name="token_dropout")(tokens)
+    sequence = LSTM(
+        embed_dim, return_sequences=True, dropout=dropout, name="decoder_lstm"
+    )(tokens)
+    sequence = Dropout(dropout, name="sequence_dropout")(sequence)
+
+    # query = caption positions, key/value = image regions, so the result is per position
+    context = Attention(name="region_attention")([sequence, regions])
+    merged = Add(name="fuse")([sequence, context])
+    merged = Dense(embed_dim, activation="relu", name="decoder_dense")(merged)
+    merged = Dropout(dropout, name="decoder_dropout")(merged)
+
+    # float32 on the output keeps a mixed_float16 run numerically stable
+    outputs = Dense(vocab_size, activation="softmax", name="next_token", dtype="float32")(merged)
+
+    return Model(inputs=[regions_in, tokens_in], outputs=outputs, name="captioning_regions")
+
+
 def layer_names(model: Model) -> list[str]:
     """Every layer class in the graph, including layers nested inside wrappers.
 
