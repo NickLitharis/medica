@@ -99,6 +99,16 @@ def generate_captions(model, features, word_to_index, index_to_word, max_length,
     return [decode([word_to_index[START], *row], index_to_word) for row in tokens]
 
 
+def reference_tokens(raw_mapping, image_ids):
+    """Reference token lists for BLEU - the original captions, with no start/end markers.
+
+    ``decode`` strips the markers from a generated caption, so a reference that kept them
+    would carry two tokens no hypothesis can ever match, which deflates every n-gram
+    precision. Pass the *unwrapped* mapping here.
+    """
+    return [[reference.split() for reference in raw_mapping[image_id]] for image_id in image_ids]
+
+
 def bleu_scores(hypotheses, references):
     """BLEU-1..4 as a dict; references is a list of reference lists per hypothesis."""
     from nltk.translate.bleu_score import corpus_bleu
@@ -126,8 +136,8 @@ def main(argv=None) -> int:
 
     model = tf.keras.models.load_model(args.model or (run / "model_best.keras"))
 
-    features, mapping, _ = load_artifacts(args.dataset_dir)
-    mapping = wrap_captions(mapping)
+    features, raw_mapping, _ = load_artifacts(args.dataset_dir)
+    mapping = wrap_captions(raw_mapping)
     test_ids = encoding["test_ids"]
     if args.limit:
         test_ids = test_ids[: args.limit]
@@ -141,7 +151,7 @@ def main(argv=None) -> int:
     elapsed = time.time() - started
 
     hypotheses = [caption.split() for caption in captions]
-    references = [[reference.split() for reference in mapping[image_id]] for image_id in test_ids]
+    references = reference_tokens(raw_mapping, test_ids)
 
     print(f"scored {len(hypotheses)} captions in {elapsed:.1f}s "
           f"({len(hypotheses) / max(elapsed, 1e-9):.1f} captions/s)")
