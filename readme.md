@@ -282,6 +282,30 @@ each position's most likely token and then continues from it, does not collapse 
 of the loss and never reaches greedy, so the remaining headroom is in the supervision and the
 image representation, not in the search.
 
+## Data provenance
+
+The images and captions come from **MedICaT** (`allenai/medicat`, Allen AI): figures and
+captions extracted from PubMed Central open-access articles, with reference text from S2ORC.
+Keys are `<pdf_hash>_<n>-Figure<k>-<m>`; MedICaT's own `image_id` also carries the figure key
+and the extension, as `<pdf_hash>_Figure<k>_<n>-Figure<k>-<m>.png`. Normalising for that
+matters: comparing the two key formats literally reports zero overlap when the real figure is
+99.6%.
+
+* 49,112 of the 49,287 images here are present in MedICaT.
+* The captions in `captions.pkl` are MedICaT's `s2_caption` with the leading "Figure N." label
+  stripped and **truncated to 20 words** — median 13 against 17 in the source, and 98.7% of
+  the source captions are longer. The cut is by word count and lands mid-phrase
+  (`...obstruction caused by`) and sometimes mid-word (`...the left lobe of the li`), so BLEU
+  here is scored against abbreviated references, and the model has learned to write short
+  captions to match.
+* The images are not in this repository. The `images/` files in the Kaggle copy are Git LFS
+  pointers, and no public URL resolves the keys. MedICaT publishes the real files at
+  https://ai2-s2-medicat.s3.us-west-2.amazonaws.com/2020-10-05/medicat_release.tar.gz
+  (104 GB, non-commercial research use).
+* A 217,060-row caption index for the full MedICaT release is kept in the
+  `med-image-captioning` Kaggle dataset (`data/csv/dataset.csv`), which is enough to restore
+  the untruncated captions for the images used here without downloading any images.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
