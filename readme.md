@@ -306,6 +306,37 @@ matters: comparing the two key formats literally reports zero overlap when the r
   `med-image-captioning` Kaggle dataset (`data/csv/dataset.csv`), which is enough to restore
   the untruncated captions for the images used here without downloading any images.
 
+### Restoring the untruncated captions
+
+Because 99.6% of the images are in MedICaT, the complete captions can be restored from the
+217,060-row index already held in the `med-image-captioning` dataset — no images, no download.
+Two models trained with identical settings except for their captions, each scored against both
+reference sets:
+
+| trained on | scored against | BLEU-1 | BLEU-2 | BLEU-4 |
+| --- | --- | --- | --- | --- |
+| truncated | truncated | **0.1675** | 0.0875 | 0.0225 |
+| truncated | full | 0.1103 | 0.0568 | 0.0115 |
+| full | truncated | 0.1051 | 0.0507 | 0.0095 |
+| full | full | **0.1329** | 0.0690 | 0.0163 |
+
+Read *down* a column: each column scores against one fixed reference set, so only that
+comparison is valid, never across columns.
+
+* **Against full references the full-caption model wins, 0.1329 to 0.1103.** That is +0.023,
+  several times the 0.003 noise floor: training on complete captions produces a better model.
+* Against the truncated references the same model scores 0.1051 to 0.1675. It is not worse —
+  it writes complete captions while those references stop at 20 words, and BLEU charges it for
+  every extra word.
+
+So repairing the captions improves the model while lowering the headline number: 0.1675 was a
+score against truncated references. The truncated column is the inflated one, and it inflates
+every figure recorded in this readme, including the 0.309. Comparisons against published
+baselines, which are scored on complete captions, were never like for like.
+
+The corrected run lengthens captions from a median of 13 words to 15 (max 51) and raises the
+sequence width from 22 to 25, which costs about 50% more per epoch (~21s to ~32s).
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
