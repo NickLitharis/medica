@@ -15,32 +15,40 @@ Trained and evaluated on the **ImageCLEF 2017 Medical Image Captioning** benchma
 
 The hybrid CNN-RNN model with integrated attention — named *OLIVER* in the thesis — scored highest on both metrics. Scores are reported in Appendix D of the thesis; `model_usage.ipynb` regenerates the evaluation.
 
-### Modernised pipeline
+### Modernised pipeline, and a like-for-like comparison
 
-`train.py` + `evaluate.py` train and score a model from scratch over the whole dataset. A full
-run — 49,286 images, 30 epochs, ~21s per epoch on one T4, then 9,857 test images scored in
-5.5 minutes — gives:
+The thesis artifact (`model_epoch_50.h5`) and the modernised model, scored on the identical
+seeded test split (9,857 images) with identical BLEU code:
 
-| | BLEU-1 | BLEU-2 | BLEU-3 | BLEU-4 |
-| --- | --- | --- | --- | --- |
-| this pipeline (teacher-forced seq2seq) | 0.1330 | 0.0692 | 0.0350 | 0.0183 |
+| metric | thesis artifact | modernised |
+| --- | --- | --- |
+| BLEU-1 | 0.1627 | 0.1623 |
+| BLEU-2 | 0.0815 | 0.0838 |
+| BLEU-3 | 0.0377 | 0.0413 |
+| BLEU-4 | 0.0178 | 0.0210 |
 
-**This is not comparable with the table above, and it is lower.** The modernised path trains a
-different model (one pass per caption, unidirectional decoder, image conditioning by
-cross-attention), on a different split (seeded 70/10/20 rather than the original positional
-70/30), and scores with `nltk.corpus_bleu`. Whether 0.309 reproduces under this evaluation
-has not been tested; that needs the original `model_epoch_50.h5` scored on this same split
-with this same BLEU code, which also needs the dataset's Keras 2 `tokenizer.pkl` shimmed.
+**The modernised model matches the artifact on BLEU-1 and edges ahead on BLEU-2 to BLEU-4**,
+while training in minutes instead of the artifact's original cost. It also trains on a
+9,026-word vocabulary against the artifact's 23,615, and the comparison shows that pruning
+did not cost quality.
 
-Two facts from the run log, so the gap is not blamed on training length:
+The artifact scored BLEU-1 0.1994 and corpus BLEU 0.0319 when evaluated the way
+`model_usage.ipynb` does — over every image, including the ones it trained on — so that
+figure is in-sample and inflated by construction.
 
-* validation loss flattened at 4.28–4.29 across the final six epochs with the learning rate
-already decayed to 4e-5, so more epochs will not close it;
-* captions contain `<unk>` where rare clinical terms were dropped by `min_count=3` (vocabulary
-9025 words), which caps the score directly.
+**Neither reproduces the 0.309 in the table above.** On held-out data the artifact scores
+0.1627. Note that `model_usage.ipynb` loads `model_final.h5`, while the artifact available
+here is `model_epoch_50.h5`, so the 0.309 may belong to a different checkpoint; and the
+baseline rows above were produced by the thesis's own evaluation code, which this comparison
+did not run.
 
-Sample output: `chest ctscan showing bilateral ground glass opacities`,
-`ultrasound of the abdomen showing the <unk> of the right kidney`.
+Scoring the modernised model against the raw captions (rather than the `<start>`-wrapped
+ones) moved its BLEU-1 from 0.1330 to 0.1623; the earlier figure was depressed by a bug in
+this repository's reference construction, not by the model.
+
+Two Keras 2 constructs in the artifact no longer run under Keras 3 and had to be worked
+around: its saved LSTM config carries a `time_major` key Keras 3 rejects, and the notebook's
+`pad_sequences` left-pads, which trips Keras 3's mask assertion on the LSTM.
 
 ## Model architecture
 
