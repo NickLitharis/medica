@@ -56,6 +56,9 @@ def parse_args(argv=None):
     parser.add_argument("--arch", choices=["seq2seq", "legacy"], default="seq2seq",
                         help="seq2seq = one pass per caption (default, much less work); "
                              "legacy = one pass per position, matching the trained artifact")
+    parser.add_argument("--label-smoothing", type=float, default=0.0,
+                        help="soften the targets; above 0 switches to one-hot targets and "
+                             "CategoricalCrossentropy, which is the loss that supports it")
     parser.add_argument("--num-parallel-calls", type=int, default=0,
                         help="0 = let tf.data decide (AUTOTUNE)")
     return parser.parse_args(argv)
@@ -109,8 +112,13 @@ def main(argv=None) -> int:
     def dataset_for(ids, shuffle):
         subset = {key: mapping[key] for key in ids}
         builder = make_caption_dataset if args.arch == "seq2seq" else make_dataset
-        return builder(features, subset, word_to_index, max_length,
-                       batch_size=args.batch_size, shuffle=shuffle)
+        dataset = builder(features, subset, word_to_index, max_length,
+                          batch_size=args.batch_size, shuffle=shuffle)
+        if args.label_smoothing > 0:
+            # sparse targets come with a padding weight already; one-hot them so the smoothed
+            # loss can be used, and keep the weight in place
+            dataset = dataset.map(lambda x, y, w: (x, tf.one_hot(y, depth=vocab_size), w))
+        return dataset
 
     train_ds = dataset_for(splits["train"], shuffle=True)
     val_ds = dataset_for(splits["val"], shuffle=False)
@@ -135,9 +143,14 @@ def main(argv=None) -> int:
         tf.keras.mixed_precision.set_global_policy("mixed_float16")
         print("mixed precision: mixed_float16", flush=True)
 
+    if args.label_smoothing > 0:
+        loss = tf.keras.losses.CategoricalCrossentropy(label_smoothing=args.label_smoothing)
+    else:
+        loss = tf.keras.losses.SparseCategoricalCrossentropy()
+
     model.compile(
         optimizer=tf.keras.optimizers.Adam(learning_rate=args.learning_rate),
-        loss=tf.keras.losses.SparseCategoricalCrossentropy(),
+        loss=loss,
         metrics=["accuracy"],
         steps_per_execution=args.steps_per_execution,
         jit_compile=args.jit,
@@ -168,6 +181,7 @@ def main(argv=None) -> int:
                 "embed_dim": args.embed_dim,
                 "feature_dim": feature_dim,
                 "min_count": args.min_count,
+                "label_smoothing": args.label_smoothing,
                 "word_to_index": word_to_index,
                 "index_to_word": index_to_word,
                 "test_ids": splits["test"],
