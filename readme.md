@@ -292,12 +292,14 @@ matters: comparing the two key formats literally reports zero overlap when the r
 99.6%.
 
 * 49,112 of the 49,287 images here are present in MedICaT.
-* The captions in `captions.pkl` are MedICaT's `s2_caption` with the leading "Figure N." label
-  stripped and **truncated to 20 words** — median 13 against 17 in the source, and 98.7% of
-  the source captions are longer. The cut is by word count and lands mid-phrase
-  (`...obstruction caused by`) and sometimes mid-word (`...the left lobe of the li`), so BLEU
-  here is scored against abbreviated references, and the model has learned to write short
-  captions to match.
+* The captions in `captions.pkl` are MedICaT's `s2_caption`, cleaned and capped at 20 words —
+  median 13 against 17 in the source, and 98.7% of the source captions are longer. The cap is
+  a **filter** (`dataset_analysis.ipynb` drops rows with more than 20 words), and the damaged
+  text is done by the cleaning steps below: all non-alphanumerics become spaces, digits are
+  removed, single letters are removed, and `mm`/`cm`/`dm` are removed. Against
+  whitespace-damaged PDF-extracted captions that turns `5-cm anastomotic stricture` into
+  `anastomotic stricture` and `borders` into `border`, so the references BLEU is scored
+  against have had their measurements deleted.
 * The images are not in this repository. The `images/` files in the Kaggle copy are Git LFS
   pointers, and no public URL resolves the keys. MedICaT publishes the real files at
   https://ai2-s2-medicat.s3.us-west-2.amazonaws.com/2020-10-05/medicat_release.tar.gz
@@ -336,6 +338,39 @@ baselines, which are scored on complete captions, were never like for like.
 
 The corrected run lengthens captions from a median of 13 words to 15 (max 51) and raises the
 sequence width from 22 to 25, which costs about 50% more per epoch (~21s to ~32s).
+
+## How the captions were preprocessed
+
+Taken from `dataset_cleaner.ipynb` and `dataset_analysis.ipynb` in the `med-image-captioning`
+dataset. Applied in order, to lowercased captions:
+
+1. Replace every character outside `[a-z0-9]` with a space — punctuation, hyphens and slashes
+   all become word breaks.
+2. Strip a leading `figure` / `fig`.
+3. **Delete every digit**, so `18F-FDG`, `5-cm` and `95%` lose their numbers.
+4. Rewrite `x ray` → `xray`, `ct scan` and bare `ct` → `ctscan`, `mri` → `mriscan`.
+5. **Delete single letters** and the units `mm`, `cm`, `dm`.
+6. Strip a leading or trailing `and` / `the`, then collapse whitespace.
+7. **Keep only captions of 20 words or fewer** (`df[df['sentence_length'] <= 20]`), after an
+   earlier pass that dropped anything over 100.
+
+Steps 1, 3 and 5 meet PDF-extracted captions whose word spacing is already broken, which is why
+fragments like `...the left lobe of the li` and `...obstruction caused by` appear: the text was
+not cut, it was cleaned. The result is a training set whose targets contain no measurements —
+the numbers and units were removed — and the model faithfully writes captions without them.
+
+Note the padding disagreement: this notebook pads `padding='post'` while the training generator
+pads `padding='pre'`. It is harmless only because the padded array was never saved (the
+`caption_features.pkl` write is commented out).
+
+### The images
+
+The image side is **not documented in any surviving notebook**. `thesis.ipynb` loads
+`image_features.pkl` as a finished artefact; the extraction step is not present. The width is
+4096, the signature of VGG16's `fc2` layer — the standard recipe in the Show-Attend-Tell
+image-captioning tutorial — while the commented-out attempts in `medicat.ipynb` use ResNet-50
+and the separate chest X-ray notebook uses DenseNet121. The step that actually produced the
+file has not been found.
 
 ## How the original thesis trained
 
