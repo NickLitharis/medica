@@ -233,6 +233,31 @@ and roughly one caption per image. The decoder has learned the shape of a radiol
 well, and has little image detail available to be more specific with. It is the argument for
 spatial features over better decoding.
 
+## Training-side experiments
+
+Four configs, identical settings otherwise: the full training split, 30 epochs, batch 256,
+greedy decoding, scored on the same 1,500 held-out images.
+
+| config | BLEU-1 | BLEU-2 | BLEU-4 | mean words | vocabulary |
+| --- | --- | --- | --- | --- | --- |
+| baseline (embed 256, dropout 0.5, `min_count` 3) | 0.1618 | 0.0857 | 0.0229 | 9.3 | 9,025 |
+| wider (embed 512, dropout 0.3) | 0.1163 | 0.0641 | 0.0184 | 6.9 | 9,025 |
+| label smoothing 0.1 | **0.1741** | **0.0898** | 0.0216 | 10.1 | 9,025 |
+| `min_count` 1 | **0.1785** | **0.0916** | 0.0215 | 10.8 | 23,618 |
+
+**Label smoothing and a larger vocabulary both help** — together roughly +0.02 BLEU-1 over the
+baseline. `min_count 1` gives a 23,618-word vocabulary, which is within four words of the
+23,615 the original Keras tokenizer carried: the original was effectively `min_count 1`, and
+pruning to 9,025 was costing accuracy by turning rare clinical terms into `<unk>`.
+
+**More capacity does not help.** Embed 512 with dropout 0.3 scored 0.1163 and early-stopped
+after about 13 epochs. The model is not capacity-limited, which agrees with the image
+ablation: the limit is the supervision and the image representation, not the decoder.
+
+The baseline was re-run here at 0.1618, against 0.1652 for the same configuration in the
+decoding experiment. That 0.003 spread between two runs of one configuration is the noise
+floor, so only larger gaps are worth believing.
+
 ## Decoding: greedy beats beam search here
 
 Beam search is the usual free win in captioning. On this model and this data it is a large
