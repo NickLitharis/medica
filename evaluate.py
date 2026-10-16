@@ -198,13 +198,17 @@ def beam_search_captions(
                 # beams already finished stay in the running, unextended
                 kept = [beam for beam in beams[image] if beam[2]]
                 pool = kept + candidates[image]
-                pool.sort(key=lambda beam: normalised_score(*beam[:2], length_penalty),
+                # len(tokens) - 1: <start> is the prompt, not an output token, so it must not
+                # inflate the length penalty for short captions
+                pool.sort(key=lambda beam: normalised_score(beam[0], len(beam[1]) - 1,
+                                                            length_penalty),
                           reverse=True)
                 beams[image] = pool[:beam_width]
 
         for image in range(count):
             best = max(beams[image],
-                       key=lambda beam: normalised_score(*beam[:2], length_penalty))
+                       key=lambda beam: normalised_score(beam[0], len(beam[1]) - 1,
+                                                         length_penalty))
             captions[chunk_start + image] = decode(best[1], index_to_word)
     return captions
 
