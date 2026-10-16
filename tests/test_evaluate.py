@@ -5,7 +5,35 @@ TensorFlow install.
 """
 from data import wrap_captions
 
-from evaluate import reference_tokens
+from evaluate import normalised_score, reference_tokens
+
+
+def test_normalised_score_removes_length_bias_at_penalty_one():
+    """Same per-token log probability must score the same, whatever the length."""
+    per_token = -2.0
+    assert normalised_score(per_token * 5, 5, 1.0) == normalised_score(per_token * 20, 20, 1.0)
+
+
+def test_normalised_score_reduces_the_length_bias_at_the_default_penalty():
+    """The default penalty of 0.6 softens the short-caption bias without removing it.
+
+    Without normalisation, equal-quality captions of 5 and 20 tokens differ by a factor of 4.
+    """
+    per_token = -2.0
+    raw_gap = abs(per_token * 20) - abs(per_token * 5)
+    penalty = 0.6
+    normalised_gap = (abs(normalised_score(per_token * 20, 20, penalty))
+                      - abs(normalised_score(per_token * 5, 5, penalty)))
+    assert 0 < normalised_gap < raw_gap
+
+
+def test_normalised_score_with_no_penalty_is_the_raw_score():
+    assert normalised_score(-10.0, 5, length_penalty=0.0) == -10.0
+
+
+def test_normalised_score_prefers_the_better_caption():
+    # -1.0 per token over 10 tokens beats -2.0 per token over 10 tokens
+    assert normalised_score(-10.0, 10) > normalised_score(-20.0, 10)
 
 
 def test_reference_tokens_exclude_the_markers():

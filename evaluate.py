@@ -41,6 +41,11 @@ def parse_args(argv=None):
     parser.add_argument("--model", default="", help="override the model path")
     parser.add_argument("--limit", type=int, default=0, help="score only the first N test images")
     parser.add_argument("--batch-size", type=int, default=256, help="images generated at once")
+    parser.add_argument("--beam-width", type=int, default=1,
+                        help="1 = greedy (the default, and what the readme's numbers use); "
+                             "3-5 = beam search, which usually scores higher")
+    parser.add_argument("--length-penalty", type=float, default=0.6,
+                        help="beam search length normalisation exponent")
     return parser.parse_args(argv)
 
 
@@ -109,6 +114,101 @@ def reference_tokens(raw_mapping, image_ids):
     return [[reference.split() for reference in raw_mapping[image_id]] for image_id in image_ids]
 
 
+def normalised_score(total_log_prob: float, length: int, length_penalty: float = 0.6) -> float:
+    """Rank a beam by summed log probability, adjusted for how long it is.
+
+    Without this, beam search prefers short captions: every extra token can only add a
+    negative log probability. Dividing by ``length ** length_penalty`` is the usual fix.
+    """
+    return total_log_prob / max(length, 1) ** length_penalty
+
+
+def beam_search_captions(
+    model,
+    features,
+    word_to_index,
+    index_to_word,
+    max_length,
+    beam_width=3,
+    batch_size=64,
+    length_penalty=0.6,
+):
+    """Beam search over the same per-position decoder.
+
+    Greedy decoding commits to the single most likely token at every step, so a word that
+    looks best now but leads nowhere cannot be taken back. Beam search keeps the best
+    ``beam_width`` partial captions per image and only narrows at the end.
+
+    The expensive part - one model call per token position - is batched over every active
+    beam of ``batch_size`` images at once, so this costs about ``beam_width`` times greedy
+    rather than ``beam_width`` separate passes. Prefixes are right-padded, as in
+    :func:`generate_captions`, and each row is read at its own last real token.
+    """
+    import numpy as np
+
+    start_id = word_to_index[START]
+    end_id = word_to_index.get(END)
+    total = len(features)
+    captions = [""] * total
+
+    for chunk_start in range(0, total, batch_size):
+        chunk = features[chunk_start : chunk_start + batch_size]
+        count = len(chunk)
+        # (summed log probability, tokens, finished)
+        beams = [[(0.0, [start_id], False)] for _ in range(count)]
+
+        for _ in range(max_length):
+            rows = [(image, index)
+                    for image in range(count)
+                    for index, (_, tokens, done) in enumerate(beams[image])
+                    if not done]
+            if not rows:
+                break
+
+            row_features = np.stack([chunk[image] for image, _ in rows])
+            prefixes = np.full((len(rows), max_length), PAD_INDEX, dtype="int32")
+            lengths = np.empty(len(rows), dtype="int32")
+            for position, (image, index) in enumerate(rows):
+                tokens = beams[image][index][1]
+                prefixes[position, : len(tokens)] = tokens
+                lengths[position] = len(tokens)
+
+            predictions = model.predict([row_features, prefixes], verbose=0,
+                                        batch_size=batch_size)
+            if predictions.ndim == 3:
+                predictions = predictions[np.arange(len(rows)), lengths - 1]
+            log_probabilities = np.log(np.clip(predictions, 1e-9, None))
+
+            candidates = [[] for _ in range(count)]
+            for position, (image, index) in enumerate(rows):
+                score = beams[image][index][0]
+                tokens = beams[image][index][1]
+                # the beam_width most likely next tokens for this beam
+                top = np.argpartition(-log_probabilities[position], beam_width)[:beam_width]
+                for token in top:
+                    token = int(token)
+                    extended = tokens + [token]
+                    candidates[image].append((
+                        score + float(log_probabilities[position][token]),
+                        extended,
+                        token == end_id or len(extended) >= max_length,
+                    ))
+
+            for image in range(count):
+                # beams already finished stay in the running, unextended
+                kept = [beam for beam in beams[image] if beam[2]]
+                pool = kept + candidates[image]
+                pool.sort(key=lambda beam: normalised_score(*beam[:2], length_penalty),
+                          reverse=True)
+                beams[image] = pool[:beam_width]
+
+        for image in range(count):
+            best = max(beams[image],
+                       key=lambda beam: normalised_score(*beam[:2], length_penalty))
+            captions[chunk_start + image] = decode(best[1], index_to_word)
+    return captions
+
+
 def bleu_scores(hypotheses, references):
     """BLEU-1..4 as a dict; references is a list of reference lists per hypothesis."""
     from nltk.translate.bleu_score import corpus_bleu
@@ -145,9 +245,17 @@ def main(argv=None) -> int:
 
     started = time.time()
     matrix = feature_matrix(features, test_ids)
-    captions = generate_captions(
-        model, matrix, word_to_index, index_to_word, max_length, batch_size=args.batch_size
-    )
+    if args.beam_width > 1:
+        print(f"beam search, width {args.beam_width}, length penalty {args.length_penalty}")
+        captions = beam_search_captions(
+            model, matrix, word_to_index, index_to_word, max_length,
+            beam_width=args.beam_width, batch_size=args.batch_size,
+            length_penalty=args.length_penalty,
+        )
+    else:
+        captions = generate_captions(
+            model, matrix, word_to_index, index_to_word, max_length, batch_size=args.batch_size
+        )
     elapsed = time.time() - started
 
     hypotheses = [caption.split() for caption in captions]
