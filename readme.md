@@ -233,6 +233,30 @@ and roughly one caption per image. The decoder has learned the shape of a radiol
 well, and has little image detail available to be more specific with. It is the argument for
 spatial features over better decoding.
 
+## Decoding: greedy beats beam search here
+
+Beam search is the usual free win in captioning. On this model and this data it is a large
+loss, so it is measured and written down rather than recommended. 1,500 held-out images, the
+same weights:
+
+| decoding | BLEU-1 | BLEU-2 | BLEU-4 | mean words |
+| --- | --- | --- | --- | --- |
+| greedy | **0.1652** | 0.0873 | 0.0235 | 9.6 |
+| beam 3, no length penalty | 0.0875 | 0.0543 | 0.0177 | 5.5 |
+| beam 3, length penalty 0.6 | 0.0912 | 0.0570 | 0.0188 | 5.6 |
+| beam 3, length penalty 1.0 | 0.1033 | 0.0640 | 0.0210 | 6.1 |
+| beam 5, no length penalty | 0.0623 | 0.0391 | 0.0119 | 4.7 |
+
+The captions say why. Greedy produces `chest xray showing bilateral pleural effusion`; beam
+search produces `chest xray`, and hands the same three or four generic templates to very
+different images. Maximising a sequence's joint probability leads to the safest run of words,
+and with one reference caption per image the safest run is generic. Greedy, which commits to
+each position's most likely token and then continues from it, does not collapse that way.
+
+`evaluate.py --beam-width` therefore defaults to 1. Raising the length penalty recovers part
+of the loss and never reaches greedy, so the remaining headroom is in the supervision and the
+image representation, not in the search.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
