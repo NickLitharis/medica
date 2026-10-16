@@ -337,6 +337,49 @@ baselines, which are scored on complete captions, were never like for like.
 The corrected run lengthens captions from a median of 13 words to 15 (max 51) and raises the
 sequence width from 22 to 25, which costs about 50% more per epoch (~21s to ~32s).
 
+## How the original thesis trained
+
+Read from the three notebooks (`thesis.ipynb` on Kaggle, plus `model_training_preprocessing.ipynb`
+and `model_usage.ipynb` here). The steps, in the order they run:
+
+1. `pip install tensorflow==2.15.0`.
+2. Load `image_features.pkl`, `captions.pkl`, `max_length.pkl` from `/kaggle/input/dataset/`.
+3. Wrap every caption as `<start> ... <end>`, mutating `mapping` in place.
+4. Fit a `Tokenizer()` over all captions (23,614 words); save the tokenizer and `vocab_size`.
+5. Split positionally and unshuffled: `train = image_ids[:int(n * 0.7)]`, `test` the rest.
+   The repo notebook uses 80/20 instead, so the two artefacts disagree.
+6. A generator that re-tokenises every caption on every epoch, one example per position,
+   `pad_sequences(padding='pre')`, `to_categorical` labels.
+7. Build the model: four variants, three commented out. The one marked *"This is the correct
+   one"* is the attention + `GlobalAveragePooling1D` model.
+8. Train: **continue from `model80/model_epoch_40(1).h5`** for 20 epochs, in a manual Python
+   loop calling `fit(..., epochs=1)`, batch 128, checkpoint every 10 epochs.
+9. Generate greedily from a `<start>` prompt, pre-padded prefixes, stop at `<end>`, strip the
+   markers from the output.
+10. Evaluate with `corpus_bleu` over `list(mapping.keys())[:100]`.
+11. Visualise one image from `/kaggle/input/testing-images/`.
+
+Four things in that, read from the code rather than the write-up:
+
+* **There is no validation set anywhere.** `EarlyStopping` and `ReduceLROnPlateau` are passed
+  monitoring `val_loss`, but nothing ever supplies validation data, so `val_loss` does not
+  exist and both callbacks are inert. Nothing stopped the run early and nothing reduced the
+  learning rate; checkpoints were saved by epoch number, not by best score.
+* **Evaluation ran over the first 100 images, which are training images** — the source of the
+  0.309, as measured in [Where the 0.309 comes from](#where-the-0309-comes-from).
+* **The references carried `<start>` and `<end>` while the predictions did not** (step 3 mutates
+  `mapping` in place; step 9 strips the markers from the generated caption). That deflates
+  every BLEU score the evaluation produced — the same defect that was fixed in the modernised
+  `evaluate.py`, where it moved the score from 0.1330 to 0.1623.
+* **The model in `model_epoch_50.h5` is commented out in the shipped notebook.** The attention
+  cell is not executed in `thesis.ipynb`, and the repo's training notebook builds a model
+  *without* attention. `model.py` is the only definition in this repository that matches the
+  saved artifact, which is why it was reconstructed from the artifact's config.
+
+The checkpoints that exist are stages of one continued run (epoch 40, plus 20 more, saved every
+10), not independent experiments, so comparing them compares training stages rather than
+methods.
+
 ## Notebooks
 
 - `model_training_preprocessing.ipynb`: Data loading, preprocessing, tokenization, train/test split, data generator, model building, training, and saving the model.
