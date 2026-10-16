@@ -372,6 +372,62 @@ image-captioning tutorial — while the commented-out attempts in `medicat.ipynb
 and the separate chest X-ray notebook uses DenseNet121. The step that actually produced the
 file has not been found.
 
+### What the cleaning cost, measured
+
+Not inferred from the notebooks — measured on the data, before and after the fix.
+
+| | what the model trained on | `captions_fixed.pkl` |
+| --- | --- | --- |
+| captions containing a digit | **0** (0.0%) | 17,869 (36.3%) |
+| captions with a measurement (`5-cm`, `95%`) | **0** | 2,432 |
+| captions with `(a)`/`(b)` panel marks | **0** | 7,136 (14.5%) |
+| captions with non-ASCII notation (µm, °C, ±) | **0** | 4,980 (10.1%) |
+| median / max words | 13 / 20 | 15 / 51 |
+| captions of three words or fewer | 879 | 791 |
+
+(Every MedICaT caption contains a digit only because it opens `Figure N.`; once that label is
+stripped, 36.3% genuinely carry a number.)
+
+**The digit removal does not merely lose information — it teaches false equivalences.** 589
+caption groups, 873 images, now share a caption with an image whose source caption differed:
+
+```
+shared: "axial contrast enhanced ctscan image obtained months after initial app"
+  source: Fig. 1 ... obtained 2 months after initial appendectomy
+  source: Fig. 2 ... obtained 5 months after initial appendectomy
+
+shared: "renal ultrasound of patient"
+  source: Fig. 3 Renal ultrasound of Patient 1
+  source: Fig. 4 Renal ultrasound of Patient 2
+```
+
+A two-month follow-up and a five-month follow-up became the same training example. (Some of the
+873 differ only by label — `Fig. 1` versus `Figure 1` — but the examples above are real.)
+
+Two more things the analysis turned up:
+
+* **The ≤20-word filter removed about 25% of matching captions**, and **6,292 of those images are
+  still in the dataset** with their shortened captions, so restoring them needs no download. The
+  remaining ~5,959 left the dataset with their images.
+* **879 training captions are three words or fewer** against 14 in the source: the cleaning
+  manufactured roughly 865 degenerate targets.
+
+### The fix
+
+`captions_fixed.pkl` replaces every caption that has a MedICaT source (49,112 of 49,287) with
+the complete text, stripping only the `Figure N.` label, lowercasing and collapsing whitespace.
+Digits, units, panel markers, laterality, punctuation and non-ASCII notation are all kept. The
+175 images with no source keep what they had.
+
+It is staged as the private Kaggle dataset `nikoslitharis/medica-fixed-captions`. It is **private
+on purpose**: MedICaT is licensed for non-commercial research use, so derived data should not be
+republished.
+
+One cost is not yet decided. Captions now reach 51 words, so the training sequence width has to
+grow from 22. Uncapped that is roughly 2.5× the time per epoch; capping at the 95th percentile
+(~27) trains at about 1.2× and cuts the longest ~5% at a token boundary. Either is better than
+the current state, where every caption is damaged.
+
 ## How the original thesis trained
 
 Read from the three notebooks (`thesis.ipynb` on Kaggle, plus `model_training_preprocessing.ipynb`
