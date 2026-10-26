@@ -1,5 +1,7 @@
-"""Medica pipeline configuration: Kaggle-aware path resolution."""
+"""Medica pipeline configuration: Kaggle-aware path resolution.
 
-from config.paths import Paths, check, resolve  # noqa: F401
+Imports are lazy so that `python3 -m config.paths` runs the module as a script
+without importing it twice. Use `from config.paths import ...` directly.
+"""
 
 __all__ = ["Paths", "check", "resolve"]
