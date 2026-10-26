@@ -17,6 +17,26 @@ Two inputs, both attached as Kaggle Datasets:
 
 There is no data in git. `readme.md` explains what each file contains.
 
+## Finding the dataset
+
+The training dataset does not need a known name. `find_dataset_dir()` searches
+`/kaggle/input` by **content**: it returns the first folder that contains both
+`image_features.pkl` and `captions.pkl`, checking one level deep because
+datasets sometimes nest. So attach the dataset, and either notebook finds it
+regardless of what it is called.
+
+If the dataset also ships `captions_fixed.pkl`, `dataset_dir_with_repaired_captions()`
+builds a folder in the work area whose `captions.pkl` is that file, so training
+uses the complete captions described in `readme.md` without any manual copying.
+
+Run it to see what was found:
+
+```bash
+python3 -m config.paths
+```
+
+Set `MEDICA_DATASET_DIR` to override the search.
+
 ## Path resolution
 
 `config/paths.py` gives every script one place to find those inputs, so nothing
@@ -27,6 +47,7 @@ hardcodes a machine-specific path. Three environment variables control it:
 | `MEDICA_INPUT_DIR` | first Kaggle dataset folder that holds image files |
 | `MEDICA_CAPTIONS` | first `s2_cleaned.json` under `/kaggle/input` |
 | `MEDICA_WORK_DIR` | `/kaggle/working/medica` |
+| `MEDICA_DATASET_DIR` | found by content under `/kaggle/input` |
 
 ```bash
 python3 -m config.paths      # show what was resolved, and what is missing

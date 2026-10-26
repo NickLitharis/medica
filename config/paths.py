@@ -89,6 +89,72 @@ def _find_work_dir() -> Path:
     return REPO_ROOT / "outputs"
 
 
+# Files that make a folder a usable training dataset. train.py needs the first
+# and third; captions are present as either the original or the repaired file.
+DATASET_MARKERS = ("image_features.pkl", "captions.pkl")
+REPAIRED_CAPTIONS = "captions_fixed.pkl"
+
+
+def _looks_like_dataset(folder: Path) -> bool:
+    return all((folder / name).is_file() for name in DATASET_MARKERS)
+
+
+def find_dataset_dir() -> Path:
+    """
+    Locate the folder holding image_features.pkl and captions.pkl.
+
+    Search order:
+      1. MEDICA_DATASET_DIR, if set
+      2. /kaggle/input, by content - every dataset folder, then one level down,
+         because the slug is not known in advance and may nest one folder deep
+      3. ./dataset in the repository
+
+    Finding by content rather than by name means the dataset can be called
+    anything and attached in any order.
+    """
+    env = os.environ.get("MEDICA_DATASET_DIR")
+    if env:
+        return Path(env)
+
+    if KAGGLE_INPUT.is_dir():
+        for root in sorted(KAGGLE_INPUT.iterdir()):
+            if not root.is_dir():
+                continue
+            candidates = [root, *sorted(p for p in root.iterdir() if p.is_dir())]
+            for candidate in candidates:
+                if _looks_like_dataset(candidate):
+                    return candidate
+
+    return REPO_ROOT / "dataset"
+
+
+def dataset_dir_with_repaired_captions(dataset_dir: Path) -> Path:
+    """
+    Return a directory whose captions.pkl is the repaired caption file.
+
+    train.py always reads captions.pkl. When the dataset ships captions_fixed.pkl
+    (the complete captions, see readme.md) this builds a small directory in the
+    work folder that symlinks the large artefacts and copies captions_fixed.pkl
+    in as captions.pkl, so training uses the better captions without touching
+    the read-only input mount or copying the features file.
+    """
+    dataset_dir = Path(dataset_dir)
+    fixed = dataset_dir / REPAIRED_CAPTIONS
+    if not fixed.is_file() or not _looks_like_dataset(dataset_dir):
+        return dataset_dir
+
+    target = _find_work_dir() / "dataset_fixed"
+    target.mkdir(parents=True, exist_ok=True)
+    for name in ("image_features.pkl", "max_length.pkl"):
+        src, dst = dataset_dir / name, target / name
+        if dst.exists() or dst.is_symlink():
+            dst.unlink()
+        dst.symlink_to(src)
+    # Small file: copy it so the swap is a real rename of the name train.py reads.
+    (target / "captions.pkl").write_bytes(fixed.read_bytes())
+    return target
+
+
 @dataclass(frozen=True)
 class Paths:
     images_dir: Path
@@ -181,5 +247,34 @@ def check(paths: Paths) -> bool:
     return ok
 
 
+def report_dataset() -> bool:
+    """Find the training dataset and say what is in it. Returns True if usable."""
+    found = find_dataset_dir()
+    print("=" * 70)
+    print("TRAINING DATASET")
+    print("=" * 70)
+    if not _looks_like_dataset(found):
+        print(f"[missing] no folder with image_features.pkl + captions.pkl")
+        print(f"          searched {KAGGLE_INPUT} by content, then {found}")
+        print("          attach the dataset, or set MEDICA_DATASET_DIR")
+        print()
+        return False
+
+    print(f"found: {found}")
+    for name in ("image_features.pkl", "captions.pkl", "max_length.pkl", REPAIRED_CAPTIONS):
+        path = found / name
+        if path.is_file():
+            print(f"  {name:<22} {path.stat().st_size / 1e6:>8.1f} MB")
+    if (found / REPAIRED_CAPTIONS).is_file():
+        print()
+        print(f"  {REPAIRED_CAPTIONS} is present: training will use the complete")
+        print("  captions via dataset_dir_with_repaired_captions().")
+    print()
+    return True
+
+
 if __name__ == "__main__":
-    sys.exit(0 if check(resolve()) else 1)
+    paths = resolve()
+    ok = check(paths)
+    ok = report_dataset() and ok
+    sys.exit(0 if ok else 1)

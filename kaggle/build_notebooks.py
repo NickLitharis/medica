@@ -48,11 +48,13 @@ else:
 
 PATHS_CELL = '''# --- Resolve input and output paths --------------------------------------
 # Attach the datasets first (right sidebar -> Add Data):
-#   * figure images  (PNG files, folder name does not matter)
-#   * s2_cleaned.json (cleaned captions JSONL)
-from config.paths import resolve, check
+#   * the training dataset (the folder with image_features.pkl) - needed to train
+#   * figure images + s2_cleaned.json - only for the optional rebuild stages
+# None of them are found by name; the folders are searched by content.
+from config.paths import resolve, check, report_dataset
 paths = resolve()
 check(paths)
+report_dataset()   # finds the training dataset by its contents, whatever it is called
 '''
 
 INDEX_CELL = '''# --- Stage 1: index the images and verify the caption matches -------------
@@ -76,16 +78,19 @@ FEATURE_CELL = '''# --- Stage 3: ViT features (cached as one .npy per figure) --
 '''
 
 TRAIN_CELL = '''# --- Stage 4: train -----------------------------------------------------
-# Calls the repository's own training script (TensorFlow/Keras 2 pipeline).
-# --out is where model_best.keras and encoding.json land.
-!python3 train.py --dataset-dir /kaggle/input/dataset \
+# Locates the dataset by content (no slug needed) and, if captions_fixed.pkl is
+# there, trains on the complete captions. model_best.keras and encoding.json
+# land in --out.
+from config.paths import find_dataset_dir, dataset_dir_with_repaired_captions
+dataset = dataset_dir_with_repaired_captions(find_dataset_dir())
+print("training from:", dataset)
+
+!python3 train.py --dataset-dir "$dataset" \
     --out /kaggle/working/medica/run --epochs 30 --batch-size 128 --arch seq2seq
 '''
 
 EVAL_CELL = '''# --- Stage 5: score on the held-out split -------------------------------
-# evaluate.py reads model_best.keras + encoding.json from --run and prints
-# BLEU-1..4 against the published ImageCLEF 2017 baselines.
-!python3 evaluate.py --dataset-dir /kaggle/input/dataset \
+!python3 evaluate.py --dataset-dir "$dataset" \
     --run /kaggle/working/medica/run --beam-width 1
 '''
 
