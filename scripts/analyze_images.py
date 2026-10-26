@@ -7,12 +7,12 @@ Checks formats, sizes, resolutions, color modes, and quality.
 Usage:
     python3 analyze_images.py [json_file] [image_folder]
     
-    json_file: Path to cleaned JSON file (default: s2_cleaned.json)
-    image_folder: Path to image folder (default: /media/marocos/C61A40931A408303/release/filtered_figures)
+    json_file: Path to cleaned captions file (default: MEDICA_CAPTIONS)
+    image_folder: Path to image folder (default: MEDICA_INPUT_DIR)
     
 Output:
     - Console report with statistics
-    - Markdown report: <json_file>_image_analysis.md
+    - Markdown report: <work_dir>/reports/<json_file>_image_analysis.md
 """
 
 import json
@@ -23,20 +23,22 @@ from datetime import datetime
 from PIL import Image
 import hashlib
 
+from config.bootstrap import paths
+
 # Parse command line arguments
 if len(sys.argv) > 1:
     json_file = sys.argv[1]
 else:
-    json_file = "s2_cleaned.json"
+    json_file = str(paths.captions)
 
 if len(sys.argv) > 2:
     image_folder = sys.argv[2]
 else:
-    image_folder = "/media/marocos/C61A40931A408303/release/filtered_figures"
+    image_folder = str(paths.images_dir)
 
 # Auto-generate output filename
-base_name = json_file.rsplit('.', 1)[0]
-output_file = f"{base_name}_image_analysis.md"
+base_name = os.path.basename(json_file.rsplit('.', 1)[0])
+output_file = str(paths.reports_dir / f"{base_name}_image_analysis.md")
 
 print("="*70)
 print("MEDICAL IMAGE DATASET ANALYZER")

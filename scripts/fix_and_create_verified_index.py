@@ -9,6 +9,8 @@ import os
 import sys
 from datetime import datetime
 
+from config.bootstrap import paths
+
 
 def extract_hash_from_filename(filename):
     """
@@ -53,7 +55,14 @@ def create_verified_training_index(captions_file, image_index_file, output_file)
         image_data = json.load(f)
         image_index = image_data['index']
         image_folder = image_data['image_folder']
-    
+
+    # The index may record the folder from another machine (e.g. an external
+    # drive). Prefer a folder that exists here; paths are rebuilt from it.
+    if not os.path.isdir(image_folder) and paths.images_dir.is_dir():
+        print(f"  indexed folder not present: {image_folder}")
+        print(f"  using resolved folder instead: {paths.images_dir}")
+        image_folder = str(paths.images_dir)
+
     print(f"✓ Loaded {len(image_index):,} unique hashes")
     print(f"✓ Image folder: {image_folder}")
     print()
@@ -208,30 +217,33 @@ def create_verified_training_index(captions_file, image_index_file, output_file)
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 fix_and_create_verified_index.py <captions_file> [image_index_file] [output_file]")
-        print()
-        print("Defaults:")
-        print("  captions_file:    (required)")
-        print("  image_index_file: data/indexes/image_index.json")
-        print("  output_file:      data/indexes/verified_training_index.json")
-        print()
-        print("Example:")
-        print("  python3 fix_and_create_verified_index.py data/processed/s2_cleaned.json")
-        sys.exit(1)
-    
-    captions_file = sys.argv[1]
-    image_index_file = sys.argv[2] if len(sys.argv) > 2 else "data/indexes/image_index.json"
-    output_file = sys.argv[3] if len(sys.argv) > 3 else "data/indexes/verified_training_index.json"
-    
+    from config.bootstrap import check, paths
+
+    if len(sys.argv) > 1 and sys.argv[1] not in ("-h", "--help"):
+        captions_file = sys.argv[1]
+        image_index_file = sys.argv[2] if len(sys.argv) > 2 else str(paths.image_index)
+        output_file = sys.argv[3] if len(sys.argv) > 3 else str(paths.verified_index)
+    else:
+        if len(sys.argv) > 1:
+            print("Usage: python3 scripts/fix_and_create_verified_index.py [captions_file] [image_index_file] [output_file]")
+            print("With no arguments, uses MEDICA_CAPTIONS and <work_dir>/indexes/*.json.")
+            print()
+        if not check(paths):
+            print("Attach the images and captions datasets, or set MEDICA_INPUT_DIR / MEDICA_CAPTIONS.")
+            sys.exit(1)
+        captions_file = str(paths.captions)
+        image_index_file = str(paths.image_index)
+        output_file = str(paths.verified_index)
+
     if not os.path.exists(captions_file):
         print(f"Error: Captions file not found: {captions_file}")
         sys.exit(1)
-    
+
     if not os.path.exists(image_index_file):
         print(f"Error: Image index file not found: {image_index_file}")
+        print("Run first: python3 scripts/create_image_index.py")
         sys.exit(1)
-    
+
     create_verified_training_index(captions_file, image_index_file, output_file)
 
 

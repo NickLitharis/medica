@@ -10,6 +10,8 @@ import json
 import time
 from datetime import datetime
 
+from config.bootstrap import paths
+
 
 def create_image_index(image_folder, output_file="image_index.json"):
     """
@@ -170,19 +172,25 @@ def lookup_image(pdf_hash, index_file="image_index.json"):
 
 
 def main():
-    if len(sys.argv) < 2:
-        print("Usage: python3 create_image_index.py <image_folder> [output_file]")
-        print("Example: python3 create_image_index.py /path/to/images")
-        print("\nThis creates a hash map for O(1) image lookup by pdf_hash.")
-        sys.exit(1)
-    
-    image_folder = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else "image_index.json"
-    
-    if not os.path.exists(image_folder):
+    from config.bootstrap import check, paths
+
+    if len(sys.argv) > 1 and sys.argv[1] not in ("-h", "--help"):
+        image_folder = sys.argv[1]
+        output_file = sys.argv[2] if len(sys.argv) > 2 else str(paths.image_index)
+    else:
+        if len(sys.argv) > 1:
+            print("Usage: python3 scripts/create_image_index.py [image_folder] [output_file]")
+            print("With no arguments, reads MEDICA_INPUT_DIR (or the Kaggle dataset)")
+            print("and writes to <work_dir>/indexes/image_index.json.")
+            print()
+        check(paths)
+        image_folder = str(paths.images_dir)
+        output_file = str(paths.image_index)
+
+    if not os.path.isdir(image_folder):
         print(f"Error: Image folder not found: {image_folder}")
         sys.exit(1)
-    
+
     create_image_index(image_folder, output_file)
 
 

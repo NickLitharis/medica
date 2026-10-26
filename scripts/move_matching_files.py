@@ -9,10 +9,14 @@ import os
 import sys
 import shutil
 
-# Configuration - edit these
-json_file = "s2_final.json"
-source_folder = "/media/marocos/C61A40931A408303/release/figures"
-dest_folder = "/media/marocos/C61A40931A408303/release/filtered_figures"
+from config.bootstrap import paths
+
+# Optional arguments: [json_file] [source_folder] [dest_folder]
+# Defaults come from config/paths.py (Kaggle-aware). Kaggle input is
+# read-only, so the destination defaults to the writable work folder.
+json_file = sys.argv[1] if len(sys.argv) > 1 else str(paths.captions)
+source_folder = sys.argv[2] if len(sys.argv) > 2 else str(paths.images_dir)
+dest_folder = sys.argv[3] if len(sys.argv) > 3 else str(paths.work_dir / "filtered_figures")
 progress_interval = 10000  # Print progress every N entries
 dry_run = False  # Set to True to see what would be moved without actually moving
 

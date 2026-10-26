@@ -8,9 +8,12 @@ import json
 import os
 import sys
 
-# Configuration - edit these
-json_file = "s2_final.json"
-search_folder = "/media/marocos/C61A40931A408303/release/figures"
+from config.bootstrap import paths
+
+# Optional arguments: [json_file] [search_folder]
+# Defaults come from config/paths.py (Kaggle-aware).
+json_file = sys.argv[1] if len(sys.argv) > 1 else str(paths.captions)
+search_folder = sys.argv[2] if len(sys.argv) > 2 else str(paths.images_dir)
 progress_interval = 10000  # Print progress every N entries
 
 print(f"Reading from: {json_file}")

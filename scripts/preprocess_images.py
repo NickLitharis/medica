@@ -13,6 +13,8 @@ from pathlib import Path
 import time
 from datetime import datetime, timedelta
 
+from config.bootstrap import paths
+
 
 def format_time(seconds):
     """Format seconds into human-readable time."""
@@ -303,16 +305,15 @@ def preprocess_dataset(index_file, output_folder, target_size=(512, 512),
 
 
 def main():
-    # Internal configuration - no command line needed!
-    BASE_DIR = Path(__file__).parent.parent  # Go up to project root
-    
-    # Input/Output paths (edit these if needed)
-    training_index_file = BASE_DIR / "data" / "indexes" / "verified_training_index.json"
-    output_folder = BASE_DIR / "data" / "preprocessed" / "images"
+    # Paths resolve from config/paths.py: MEDICA_WORK_DIR on Kaggle,
+    # ./outputs locally. Command-line arguments still override everything.
+    training_index_file = paths.verified_index
+    output_folder = paths.preprocessed_dir / "images"
     target_size = 512  # Options: 224, 256, 384, 512
     output_format = "png"  # Options: png, jpg
     normalize = True
     apply_clahe = True  # Set True for X-ray/CT enhancement
+    output_folder.mkdir(parents=True, exist_ok=True)
     
     print("="*70)
     print("IMAGE PREPROCESSING CONFIGURATION")

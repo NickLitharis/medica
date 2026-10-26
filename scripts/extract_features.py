@@ -15,6 +15,8 @@ import time
 from datetime import datetime
 from transformers import ViTImageProcessor, ViTModel
 
+from config.bootstrap import paths
+
 
 def format_time(seconds):
     """Format seconds into human-readable time."""
@@ -444,12 +446,9 @@ def main():
         success = check_gpu()
         sys.exit(0 if success else 1)
     
-    # Internal configuration
-    BASE_DIR = Path(__file__).parent.parent
-    
-    # Input/Output paths
-    preprocessed_index_file = BASE_DIR / "data" / "indexes" / "verified_training_index_preprocessed.json"
-    output_folder = BASE_DIR / "data" / "features"
+    # Input/Output paths resolve from config/paths.py (Kaggle-aware)
+    preprocessed_index_file = paths.preprocessed_index
+    output_folder = paths.features_dir
     batch_size = 8  # Smaller batch for CPU (adjust: 4-16 depending on RAM)
     
     print("="*70)

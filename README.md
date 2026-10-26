@@ -1,114 +1,73 @@
-# Medical Image Caption Dataset
+# Medica
 
-A curated dataset of medical images with cleaned captions for machine learning training.
+Medical image captioning for the thesis. The full project description, results,
+architecture and data provenance are in [`readme.md`](readme.md); that file is
+the authoritative document.
 
-## 📁 Project Structure
+This `README.md` covers one thing: **how to run the repository on Kaggle**.
 
-```
-medica/
-├── scripts/           # Python scripts for data processing
-├── data/
-│   ├── raw/          # Original unprocessed data
-│   ├── processed/    # Cleaned and processed data
-│   └── indexes/      # Image and training indexes
-├── reports/          # Analysis reports and statistics
-├── notebooks/        # Jupyter notebooks for experimentation
-├── docs/             # Documentation and progress tracking
-├── dataset/          # Dataset files (images, captions, metadata)
-└── venv/             # Python virtual environment
-```
+## What is on Kaggle
 
-## 🚀 Quick Start
+Two inputs, both attached as Kaggle Datasets:
 
-### 1. Setup Environment
+| Dataset | Contents |
+|---|---|
+| Preprocessed dataset | the `dataset/` folder the pipeline expects: `image_features.pkl`, `captions.pkl`, `max_length.pkl` |
+| Figure images (optional) | the PNG figures, if you want to rebuild the dataset from source |
+
+There is no data in git. `readme.md` explains what each file contains.
+
+## Path resolution
+
+`config/paths.py` gives every script one place to find those inputs, so nothing
+hardcodes a machine-specific path. Three environment variables control it:
+
+| Variable | Default on Kaggle |
+|---|---|
+| `MEDICA_INPUT_DIR` | first Kaggle dataset folder that holds image files |
+| `MEDICA_CAPTIONS` | first `s2_cleaned.json` under `/kaggle/input` |
+| `MEDICA_WORK_DIR` | `/kaggle/working/medica` |
+
 ```bash
-source venv/bin/activate
-pip install -r requirements.txt
+python3 -m config.paths      # show what was resolved, and what is missing
 ```
 
-### 2. Data Processing Pipeline
+On a normal machine the defaults point at `./dataset/images`,
+`./data/processed/s2_cleaned.json` and `./outputs`.
+
+## Notebooks
+
+`kaggle/` holds the notebooks to import into Kaggle. They are generated from
+`kaggle/build_notebooks.py`, which is committed beside them so the code is
+reviewable as plain text:
+
 ```bash
-# Clean captions
-python3 scripts/clean_captions.py data/raw/s2_final.json
-
-# Analyze cleaned data
-python3 scripts/analyze_captions.py data/processed/s2_cleaned.json
-
-# Create image index (O(1) lookup)
-python3 scripts/create_image_index.py /path/to/images
-
-# Compare captions with images
-python3 scripts/compare_and_filter.py data/processed/s2_cleaned.json
-
-# Create training index
-python3 scripts/create_training_index.py data/processed/s2_cleaned_with_images.json /path/to/images
+python3 kaggle/build_notebooks.py
 ```
 
-## 📊 Dataset Statistics
+| Notebook | Purpose |
+|---|---|
+| `kaggle/01_pipeline.ipynb` | Builds the image index, verifies caption-to-image matches, preprocesses images, extracts features |
+| `kaggle/02_train.ipynb` | Training run: calls the repository's own `train.py`, then `evaluate.py` |
 
-- **Total Captions (Original):** 138,202
-- **Cleaned Captions:** 105,723 (76.5% retention)
-- **Images Available:** See `data/processed/comparison_summary.json`
-- **Average Caption Length:** 46 words (median)
-- **Medical Term Coverage:** 88.1%
+Each notebook clones the repository into `/kaggle/working/medica` and changes
+into it, so `train.py`, `data.py` and `evaluate.py` import as they do locally.
+If a notebook runs without internet access, upload the repository as a dataset
+and point `REPO` in the setup cell at that folder.
 
-## 📝 Documentation
+## Disk budget
 
-- **Progress Tracking:** `docs/README_PROGRESS.md`
-- **Caption Analysis:** `docs/README_CAPTION_ANALYSIS.md`
-- **Instructions:** `docs/README_INSTRUCTIONS.md`
+A Kaggle notebook has about 20 GB of writable space. Preprocessing every figure
+at 512×512 PNG does not fit, so `01_pipeline.ipynb` preprocesses a subset by
+default. Use `--limit` for a smaller run, or a smaller size for the full set.
 
-## 📈 Reports
+## Relationship to the rest of the repository
 
-All analysis reports are in `reports/`:
-- Pre-cleaning analysis: `s2_final_analysis_report.md`
-- Post-cleaning analysis: `s2_cleaned_analysis_report.md`
-- Image analysis: `filtered_figures_image_analysis.md`
+The scripts under `scripts/` are the dataset pipeline: cleaning, analysis,
+indexing, verification, preprocessing and feature extraction. They all resolve
+paths through `config/paths.py` and accept command-line overrides.
 
-## 🔧 Scripts
-
-### Data Processing
-- `clean_captions.py` - Clean and normalize captions
-- `analyze_captions.py` - Comprehensive caption analysis
-- `analyze_images_comprehensive.py` - Detailed image analysis
-
-### Index Creation
-- `create_image_index.py` - O(1) image lookup index
-- `create_training_index.py` - Training-ready dataset index
-- `compare_and_filter.py` - Match captions with images
-
-### Utilities
-- `filter_json_keys.py` - Filter JSON by keys
-- `remove_null_*.py` - Clean null entries
-- `process_json_pipeline.py` - Full processing pipeline
-
-## 📦 Data Files
-
-### Raw Data (`data/raw/`)
-- `s2_full_figures.jsonl` - Original S2ORC data
-- `s2_final.json` - Pre-processed data
-
-### Processed Data (`data/processed/`)
-- `s2_cleaned.json` - Cleaned captions (105,723 entries)
-- `s2_cleaned_missing_images.json` - Entries without images
-- `comparison_summary.json` - Caption-image matching statistics
-
-### Indexes (`data/indexes/`)
-- `image_index.json` - O(1) image lookup by pdf_hash
-
-## 📄 License
-
-See `LICENSE`, `DATA_LICENSE.txt`, and `LICENSE-THESIS.txt` for details.
-
-## 🔬 Next Steps
-
-1. ✅ Caption cleaning and normalization
-2. ✅ Image-caption matching
-3. ✅ Index creation for O(1) lookup
-4. ⏳ Image preprocessing (resize, normalize)
-5. ⏳ Train/validation/test split (80/10/10)
-6. ⏳ Model training
-
----
-
-*Last updated: October 15, 2025*
+The model, training loop, evaluator and tests live at the repository root
+(`model.py`, `train.py`, `evaluate.py`, `tests/`) and are documented in
+`readme.md`. Nothing here changes how they behave; it only supplies the paths
+they need on Kaggle.

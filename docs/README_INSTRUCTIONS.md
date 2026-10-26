@@ -27,7 +27,7 @@ This project implements an AI system for automatically generating descriptive ca
 
 ```bash
 # Clone the repository (if not already done)
-cd /home/marocos/projects/medica
+cd ~/projects/medica   # or wherever you cloned it
 
 # Create virtual environment
 python3 -m venv venv_medica
@@ -217,7 +217,7 @@ jupyter notebook model_training_preprocessing.ipynb
 #### Starting Your Work Session
 ```bash
 # 1. Activate environment
-cd /home/marocos/projects/medica
+cd ~/projects/medica   # or wherever you cloned it
 source venv_medica/bin/activate
 
 # 2. Start Jupyter
